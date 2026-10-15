@@ -50,23 +50,120 @@ Built on the **Android TV Remote Protocol v2** using mutual TLS (mTLS), Protocol
 
 ---
 
-## 🚀 Getting Started
+## 📥 Installation
 
-### Installation & Binary
+Choose the installation method that fits your environment:
 
-The compiled release binary is installed at `/usr/local/bin/googletv-tui`:
+### Option 1: One-Line Quick Install (Linux x86_64)
+
+Install the precompiled standalone binary directly to `~/.local/bin` (no root required) or `/usr/local/bin` (system-wide):
 
 ```bash
-googletv-tui
+# User install (~/.local/bin)
+mkdir -p ~/.local/bin
+curl -sSL https://github.com/Andrewx82/googletv-tui/releases/latest/download/googletv-tui-linux-x86_64 -o ~/.local/bin/googletv-tui
+chmod +x ~/.local/bin/googletv-tui
+
+# Ensure ~/.local/bin is in your PATH (e.g. in ~/.bashrc or ~/.zshrc):
+export PATH="$HOME/.local/bin:$PATH"
 ```
 
-### Building from Source
+Or install system-wide with `sudo`:
 
 ```bash
-cd /root/googletv-tui
+sudo curl -sSL https://github.com/Andrewx82/googletv-tui/releases/latest/download/googletv-tui-linux-x86_64 -o /usr/local/bin/googletv-tui
+sudo chmod +x /usr/local/bin/googletv-tui
+```
+
+---
+
+### Option 2: Download Tarball from GitHub Releases
+
+Download the archive containing the binary, documentation, and license:
+
+```bash
+curl -sSL https://github.com/Andrewx82/googletv-tui/releases/latest/download/googletv-tui-v0.1-linux-x86_64.tar.gz | tar -xz
+sudo mv googletv-tui /usr/local/bin/
+```
+
+Verify the installation:
+
+```bash
+googletv-tui --version
+```
+
+---
+
+### Option 3: Install via Cargo
+
+If you have Rust and Cargo installed:
+
+```bash
+cargo install --git https://github.com/Andrewx82/googletv-tui.git
+```
+
+---
+
+### Option 4: Build from Source
+
+#### 1. Install System Dependencies
+
+Before compiling, install OpenSSL, pkg-config, and Protobuf compiler for your Linux distribution:
+
+- **Debian / Ubuntu / Linux Mint / Pop!_OS**:
+  ```bash
+  sudo apt update
+  sudo apt install -y build-essential libssl-dev pkg-config protobuf-compiler git
+  ```
+- **Arch Linux / Manjaro**:
+  ```bash
+  sudo pacman -S --needed base-devel openssl pkgconf protobuf git
+  ```
+- **Fedora / RHEL**:
+  ```bash
+  sudo dnf install -y gcc openssl-devel pkgconf-pkg-config protobuf-compiler git
+  ```
+- **openSUSE**:
+  ```bash
+  sudo zypper install -y gcc libopenssl-devel pkg-config protobuf-devel git
+  ```
+- **Alpine Linux**:
+  ```bash
+  apk add build-base openssl-dev pkgconf protoc git
+  ```
+
+#### 2. Clone and Build
+
+```bash
+git clone https://github.com/Andrewx82/googletv-tui.git
+cd googletv-tui
 cargo build --release
-./target/release/googletv-tui
+
+# Optional: Install binary to /usr/local/bin
+sudo cp target/release/googletv-tui /usr/local/bin/
 ```
+
+---
+
+## ⚡ First-Time Setup & Pairing Walkthrough
+
+1. **Network Requirement**: Make sure your Linux PC and your Google TV / Android TV are connected to the same local Wi-Fi or Ethernet network.
+2. **Launch the TUI**:
+   ```bash
+   googletv-tui
+   ```
+3. **Discover TV**:
+   - Press `2` to open the **Devices** tab.
+   - The app will automatically scan for devices advertising `_androidtvremote2._tcp`. You can press `s` anytime to re-scan.
+   - If your TV is on another subnet, press `a` to enter its IP address manually.
+4. **Initiate Pairing**:
+   - Select your TV in the list using `↑` / `↓` and press `p` or `Enter`.
+   - Your TV screen will display a **6-character PIN code** (e.g. `3F4D12`).
+5. **Enter Code**:
+   - Type the 6 characters in the pop-up modal.
+   - The app will automatically compute the cryptographic SHA-256 certificate handshake, submit the secret, and establish a permanent pairing.
+6. **Start Controlling**:
+   - Press `1` to switch back to the visual remote and control your TV!
 
 ---
 
