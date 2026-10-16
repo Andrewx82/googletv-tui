@@ -237,26 +237,44 @@ async fn run_tui() -> Result<()> {
     state.is_scanning = true;
     let _ = DiscoveryManager::start_discovery(disc_tx.clone(), Duration::from_secs(10)).await;
 
-    // Auto-connect to active device if configured
-    if let Some(active_ip) = state.config.active_device_ip.clone() {
-        if let Ok(ip) = active_ip.parse::<std::net::IpAddr>() {
+    // Auto-connect to last TV on startup
+    if let Some((target_name, target_ip)) = state.config.get_last_tv() {
+        if let Ok(ip) = target_ip.parse::<std::net::IpAddr>() {
             let target = SocketAddr::new(ip, 6466);
-            state.connection_status = ConnectionStatus::Connecting(active_ip.clone());
+            state.connection_status = ConnectionStatus::Connecting(target_ip.clone());
+            state.config.set_active_device(&target_ip);
+            state.log(
+                LogLevel::Info,
+                format!("Attempting auto-connect to last TV: {} ({})", target_name, target_ip),
+            );
+
             let cert_clone = client_cert.clone();
             let key_clone = client_key.clone();
             let tx_clone = tv_event_tx.clone();
+            let name_for_task = target_name.clone();
+            let ip_for_task = target_ip.clone();
 
             tokio::spawn(async move {
-                match TvConnection::connect(target, cert_clone, key_clone, tx_clone).await {
+                match TvConnection::connect(target, cert_clone, key_clone, tx_clone.clone()).await {
                     Ok(_handle) => {
-                        // Handshake started
+                        // Handshake started and client task will send TvEvent::Connected
                     }
-                    Err(_e) => {
-                        // Connection failed
+                    Err(e) => {
+                        let _ = tx_clone
+                            .send(TvEvent::ConnectionFailed(format!(
+                                "Failed to connect to {} ({}): {}",
+                                name_for_task, ip_for_task, e
+                            )))
+                            .await;
                     }
                 }
             });
         }
+    } else {
+        state.log(
+            LogLevel::Info,
+            "No previous TV found. Press [2] for Devices to scan and pair your TV.",
+        );
     }
 
     // Run main application loop
@@ -326,7 +344,8 @@ async fn run_app_loop(
             // Incoming TV client events (port 6466)
             Some(event) = tv_event_rx.recv() => {
                 match event {
-                    TvEvent::Connected(details) => {
+                    TvEvent::Connected { details, handle } => {
+                        state.client_handle = Some(handle);
                         let ip = state.config.active_device_ip.clone().unwrap_or_else(|| "TV".into());
                         state.connection_status = ConnectionStatus::Connected {
                             ip: ip.clone(),
@@ -335,6 +354,11 @@ async fn run_app_loop(
                         state.device_details = Some(details.clone());
                         state.log(LogLevel::Success, format!("Connected to {} {} (v{})", details.vendor, details.model, details.app_version));
                         state.config.add_or_update_device("Google TV", &ip, true, Some(details.vendor), Some(details.model));
+                    }
+                    TvEvent::ConnectionFailed(reason) => {
+                        state.connection_status = ConnectionStatus::Disconnected;
+                        state.client_handle = None;
+                        state.log(LogLevel::Warning, format!("Auto-connect failed: {}. Press [2] for Devices.", reason));
                     }
                     TvEvent::Disconnected(reason) => {
                         state.connection_status = ConnectionStatus::Disconnected;
@@ -503,7 +527,12 @@ async fn handle_key_event(
                                 let tx_c = tv_event_tx.clone();
                                 state.connection_status = ConnectionStatus::Connecting(ip.clone());
                                 tokio::spawn(async move {
-                                    let _ = TvConnection::connect(target, cert_c, key_c, tx_c).await;
+                                    match TvConnection::connect(target, cert_c, key_c, tx_c.clone()).await {
+                                        Ok(_) => {}
+                                        Err(e) => {
+                                            let _ = tx_c.send(TvEvent::ConnectionFailed(format!("{}", e))).await;
+                                        }
+                                    }
                                 });
                             }
                         }

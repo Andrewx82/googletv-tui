@@ -37,7 +37,11 @@ pub struct DeviceDetails {
 
 #[derive(Debug, Clone)]
 pub enum TvEvent {
-    Connected(DeviceDetails),
+    Connected {
+        details: DeviceDetails,
+        handle: TvClientHandle,
+    },
+    ConnectionFailed(String),
     Disconnected(String),
     PowerStateChanged(bool),
     VolumeChanged {
@@ -60,7 +64,7 @@ pub enum TvCommand {
     Disconnect,
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct TvClientHandle {
     cmd_tx: mpsc::Sender<TvCommand>,
 }
@@ -116,8 +120,9 @@ impl TvConnection {
         connector_builder.set_verify(SslVerifyMode::NONE);
         let connector = connector_builder.build();
 
-        let tcp = TcpStream::connect(target)
+        let tcp = tokio::time::timeout(Duration::from_secs(5), TcpStream::connect(target))
             .await
+            .with_context(|| format!("Connection timed out after 5s connecting to {}", target))?
             .with_context(|| format!("Failed to connect to TV at {}", target))?;
 
         let ssl = connector
@@ -127,12 +132,15 @@ impl TvConnection {
             .context("Failed into_ssl")?;
 
         let mut stream = SslStream::new(ssl, tcp).context("Failed into SslStream")?;
-        Pin::new(&mut stream)
-            .connect()
+        tokio::time::timeout(Duration::from_secs(5), Pin::new(&mut stream).connect())
             .await
+            .with_context(|| format!("TLS handshake timed out after 5s with {}", target))?
             .context("TLS handshake failed with TV remote port")?;
 
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<TvCommand>(32);
+        let handle_for_event = TvClientHandle {
+            cmd_tx: cmd_tx.clone(),
+        };
 
         tokio::spawn(async move {
             let mut ime_counter = 0i32;
@@ -221,7 +229,12 @@ impl TvConnection {
                                             model: dev.model,
                                             app_version: dev.app_version,
                                         };
-                                        let _ = event_tx.send(TvEvent::Connected(device_info.clone())).await;
+                                        let _ = event_tx
+                                            .send(TvEvent::Connected {
+                                                details: device_info.clone(),
+                                                handle: handle_for_event.clone(),
+                                            })
+                                            .await;
                                     }
                                     // Reply with client configure
                                     let mut reply = RemoteMessage::default();

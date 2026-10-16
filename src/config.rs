@@ -277,6 +277,42 @@ impl AppConfig {
         let _ = self.save();
     }
 
+    pub fn get_last_tv(&self) -> Option<(String, String)> {
+        // 1. If active_device_ip is set, check if it matches a paired saved device
+        if let Some(active_ip) = &self.active_device_ip {
+            if let Some(dev) = self.devices.iter().find(|d| &d.ip == active_ip && d.paired) {
+                return Some((dev.name.clone(), dev.ip.clone()));
+            }
+            if !active_ip.is_empty() {
+                let name = self
+                    .devices
+                    .iter()
+                    .find(|d| &d.ip == active_ip)
+                    .map(|d| d.name.clone())
+                    .unwrap_or_else(|| "Google TV".to_string());
+                return Some((name, active_ip.clone()));
+            }
+        }
+
+        // 2. Fall back to the most recently connected paired device
+        if let Some(dev) = self
+            .devices
+            .iter()
+            .filter(|d| d.paired)
+            .max_by_key(|d| d.last_connected)
+        {
+            return Some((dev.name.clone(), dev.ip.clone()));
+        }
+
+        // 3. Fall back to any paired device
+        if let Some(dev) = self.devices.iter().find(|d| d.paired) {
+            return Some((dev.name.clone(), dev.ip.clone()));
+        }
+
+        // 4. Fall back to any saved device in the list
+        self.devices.first().map(|d| (d.name.clone(), d.ip.clone()))
+    }
+
     pub fn add_app(&mut self, app: CustomApp) -> Result<()> {
         self.custom_apps.push(app);
         self.save()
@@ -394,6 +430,42 @@ mod tests {
         assert_eq!(app.name, "SmartTube");
         assert_eq!(app.hotkey, None);
         assert!(app.is_quick_app);
+    }
+
+    #[test]
+    fn test_get_last_tv() {
+        let mut cfg = AppConfig::default();
+        assert_eq!(cfg.get_last_tv(), None);
+
+        cfg.devices.push(SavedDevice {
+            name: "Living Room TV".to_string(),
+            ip: "192.168.1.50".to_string(),
+            paired: true,
+            last_connected: None,
+            vendor: None,
+            model: None,
+        });
+        cfg.devices.push(SavedDevice {
+            name: "Bedroom TV".to_string(),
+            ip: "192.168.1.60".to_string(),
+            paired: true,
+            last_connected: Some(Utc::now()),
+            vendor: None,
+            model: None,
+        });
+
+        // With no active_device_ip, picks the one with most recent last_connected
+        assert_eq!(
+            cfg.get_last_tv(),
+            Some(("Bedroom TV".to_string(), "192.168.1.60".to_string()))
+        );
+
+        // When active_device_ip is explicitly set, it takes priority
+        cfg.active_device_ip = Some("192.168.1.50".to_string());
+        assert_eq!(
+            cfg.get_last_tv(),
+            Some(("Living Room TV".to_string(), "192.168.1.50".to_string()))
+        );
     }
 }
 
