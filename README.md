@@ -97,7 +97,7 @@ sudo chmod +x /usr/local/bin/googletv-tui
 Download the archive containing the binary, documentation, and license:
 
 ```bash
-curl -sSL https://github.com/Andrewx82/googletv-tui/releases/latest/download/googletv-tui-v0.2-linux-x86_64.tar.gz | tar -xz
+curl -sSL https://github.com/Andrewx82/googletv-tui/releases/latest/download/googletv-tui-v0.2.1-linux-x86_64.tar.gz | tar -xz
 sudo mv googletv-tui /usr/local/bin/
 ```
 

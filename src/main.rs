@@ -39,7 +39,7 @@ use crate::proto::remote::{RemoteDirection, RemoteKeyCode};
 #[command(
     name = "googletv-tui",
     author = "Google TV Remote TUI Developer",
-    version = "0.2.0",
+    version = "0.2.1",
     about = "Feature-rich Google TV & Android TV remote control TUI and CLI in Rust"
 )]
 struct Cli {
