@@ -15,7 +15,26 @@ YELLOW='\033[1;33m'
 BOLD='\033[1m'
 NC='\033[0m'
 
-printf "${BLUE}${BOLD}==>${NC} ${BOLD}Installing Google TV Remote TUI (${BINARY_NAME})...${NC}\n"
+# Handle uninstall flag
+if [ "$1" = "--uninstall" ] || [ "$1" = "uninstall" ]; then
+    printf "${BLUE}${BOLD}==>${NC} ${BOLD}Uninstalling Google TV Remote TUI (${BINARY_NAME})...${NC}\n"
+    REMOVED=0
+    for LOC in "/usr/local/bin/${BINARY_NAME}" "$HOME/.local/bin/${BINARY_NAME}"; do
+        if [ -f "$LOC" ]; then
+            rm -f "$LOC"
+            printf "${GREEN}✓ Removed %s${NC}\n" "$LOC"
+            REMOVED=1
+        fi
+    done
+    if [ "$REMOVED" -eq 0 ]; then
+        printf "${YELLOW}Binary not found in standard paths (/usr/local/bin, ~/.local/bin).${NC}\n"
+    fi
+    printf "\nTo also remove saved devices, pairing certificates, and settings:\n"
+    printf "  rm -rf ~/.config/googletv-tui\n\n"
+    exit 0
+fi
+
+printf "${BLUE}${BOLD}==>${NC} ${BOLD}Installing / Updating Google TV Remote TUI (${BINARY_NAME})...${NC}\n"
 
 # 1. Detect OS & Architecture
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -48,9 +67,9 @@ else
 fi
 
 # 3. Determine download URL (latest release)
-LATEST_TAG="$(curl -sSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "v0.1")"
+LATEST_TAG="$(curl -sSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "v0.2")"
 if [ -z "$LATEST_TAG" ]; then
-    LATEST_TAG="v0.1"
+    LATEST_TAG="v0.2"
 fi
 
 DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/${BINARY_NAME}-${TARGET_ARCH}"

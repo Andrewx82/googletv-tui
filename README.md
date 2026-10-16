@@ -92,12 +92,12 @@ sudo chmod +x /usr/local/bin/googletv-tui
 
 ---
 
-### Option 2: Download Tarball from GitHub Releases
+### Option 3: Download Tarball from GitHub Releases
 
 Download the archive containing the binary, documentation, and license:
 
 ```bash
-curl -sSL https://github.com/Andrewx82/googletv-tui/releases/latest/download/googletv-tui-v0.1-linux-x86_64.tar.gz | tar -xz
+curl -sSL https://github.com/Andrewx82/googletv-tui/releases/latest/download/googletv-tui-v0.2-linux-x86_64.tar.gz | tar -xz
 sudo mv googletv-tui /usr/local/bin/
 ```
 
@@ -109,7 +109,7 @@ googletv-tui --version
 
 ---
 
-### Option 3: Install via Cargo
+### Option 4: Install via Cargo
 
 If you have Rust and Cargo installed:
 
@@ -119,7 +119,7 @@ cargo install --git https://github.com/Andrewx82/googletv-tui.git
 
 ---
 
-### Option 4: Build from Source
+### Option 5: Build from Source
 
 #### 1. Install System Dependencies
 
@@ -156,6 +156,76 @@ cargo build --release
 
 # Optional: Install binary to /usr/local/bin
 sudo cp target/release/googletv-tui /usr/local/bin/
+```
+
+---
+
+## 🔄 How to Update
+
+Updating `googletv-tui` to the latest version preserves your paired devices and custom configurations:
+
+### Method 1: Using the Installer Script (Recommended)
+Simply re-run the universal installer. It detects the latest release on GitHub, automatically replaces your existing binary, and keeps your configuration intact:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Andrewx82/googletv-tui/main/install.sh | sh
+```
+
+### Method 2: Via Cargo
+If you installed via Cargo:
+
+```bash
+cargo install --git https://github.com/Andrewx82/googletv-tui.git --force
+```
+
+### Method 3: Direct Binary Download
+Download the latest binary release directly and overwrite your existing installation:
+
+```bash
+# If installed in ~/.local/bin:
+curl -sSL https://github.com/Andrewx82/googletv-tui/releases/latest/download/googletv-tui-linux-x86_64 -o ~/.local/bin/googletv-tui && chmod +x ~/.local/bin/googletv-tui
+
+# If installed system-wide in /usr/local/bin:
+sudo curl -sSL https://github.com/Andrewx82/googletv-tui/releases/latest/download/googletv-tui-linux-x86_64 -o /usr/local/bin/googletv-tui && sudo chmod +x /usr/local/bin/googletv-tui
+```
+
+Check your installed version anytime:
+```bash
+googletv-tui --version
+```
+
+---
+
+## 🗑️ How to Uninstall
+
+### Method 1: Automated Script Uninstall
+You can cleanly uninstall the binary using the installer script with the `--uninstall` flag:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Andrewx82/googletv-tui/main/install.sh | sh -s -- --uninstall
+```
+
+### Method 2: Manual Removal
+Remove the executable binary from your binary path:
+
+```bash
+# System-wide installation:
+sudo rm -f /usr/local/bin/googletv-tui
+
+# User installation:
+rm -f ~/.local/bin/googletv-tui
+```
+
+If installed using Cargo:
+```bash
+cargo uninstall googletv-tui
+```
+
+### Method 3: Remove Configuration & Pairing Keys (Optional)
+If you also want to remove your saved TV list, custom app catalogue, macros, and cryptographic pairing certificates:
+
+```bash
+rm -rf ~/.config/googletv-tui
 ```
 
 ---
