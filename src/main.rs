@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use crossterm::event::{
     DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, KeyModifiers,
+    MouseButton, MouseEvent, MouseEventKind,
 };
 use crossterm::execute;
 use crossterm::terminal::{
@@ -39,7 +40,7 @@ use crate::proto::remote::{RemoteDirection, RemoteKeyCode};
 #[command(
     name = "googletv-tui",
     author = "Google TV Remote TUI Developer",
-    version = "0.2.2",
+    version = "0.3.0",
     about = "Feature-rich Google TV & Android TV remote control TUI and CLI in Rust"
 )]
 struct Cli {
@@ -441,8 +442,18 @@ async fn run_app_loop(
                             &disc_tx,
                         ).await?;
                     }
-                    Event::Mouse(_mouse) => {
-                        // Mouse click support can trigger tab switching or remote buttons
+                    Event::Mouse(mouse) => {
+                        let term_size = terminal.size()?;
+                        handle_mouse_event(
+                            mouse,
+                            term_size,
+                            state,
+                            &client_cert,
+                            &client_key,
+                            &tv_event_tx,
+                            &disc_tx,
+                        )
+                        .await?;
                     }
                     _ => {}
                 }
@@ -919,71 +930,8 @@ async fn handle_devices_keys(
             }
         }
         KeyCode::Enter | KeyCode::Char('p') => {
-            let target_ip = if state.devices_focus_saved {
-                state.config.devices.get(state.selected_saved_idx).map(|d| (d.name.clone(), d.ip.clone(), d.paired))
-            } else {
-                state.discovered_devices.get(state.selected_discovered_idx).map(|d| {
-                    let paired = state.config.devices.iter().any(|s| s.ip == d.ip.to_string() && s.paired);
-                    (d.name.clone(), d.ip.to_string(), paired)
-                })
-            };
-
-            if let Some((name, ip_str, paired)) = target_ip {
-                state.config.set_active_device(&ip_str);
-
-                if paired && key.code == KeyCode::Enter {
-                    // Connect directly
-                    if let Ok(ip) = ip_str.parse::<std::net::IpAddr>() {
-                        let target = SocketAddr::new(ip, 6466);
-                        let cert_c = client_cert.clone();
-                        let key_c = client_key.clone();
-                        let tx_c = tv_event_tx.clone();
-                        state.connection_status = ConnectionStatus::Connecting(ip_str.clone());
-                        state.log(LogLevel::Info, format!("Connecting to {} ({})", name, ip_str));
-
-                        let handle_res = TvConnection::connect(target, cert_c, key_c, tx_c).await;
-                        match handle_res {
-                            Ok(handle) => {
-                                state.client_handle = Some(handle);
-                                state.active_tab = ActiveTab::Remote;
-                            }
-                            Err(e) => {
-                                state.connection_status = ConnectionStatus::Error(format!("{}", e));
-                                state.log(LogLevel::Error, format!("Failed to connect: {}", e));
-                            }
-                        }
-                    }
-                } else {
-                    // Trigger Pairing Handshake!
-                    if let Ok(ip) = ip_str.parse::<std::net::IpAddr>() {
-                        let target = SocketAddr::new(ip, PAIRING_PORT);
-                        state.connection_status = ConnectionStatus::Pairing(ip_str.clone());
-                        state.log(LogLevel::Info, format!("Starting pairing handshake with {} ({})", name, ip_str));
-
-                        let cert_c = client_cert.clone();
-                        let key_c = client_key.clone();
-                        let modal_name = name.clone();
-                        let modal_ip = ip_str.clone();
-
-                        match PairingSession::start(target, "Google TV TUI", cert_c, key_c).await {
-                            Ok(session) => {
-                                state.modal = ActiveModal::Pairing(PairingModalState {
-                                    ip: modal_ip,
-                                    name: modal_name,
-                                    pin_input: String::new(),
-                                    error: None,
-                                    session: Some(Arc::new(Mutex::new(Some(session)))),
-                                    is_submitting: false,
-                                });
-                            }
-                            Err(e) => {
-                                state.log(LogLevel::Error, format!("Pairing handshake initiation failed: {}", e));
-                                state.connection_status = ConnectionStatus::Error(format!("{}", e));
-                            }
-                        }
-                    }
-                }
-            }
+            let force_pairing = key.code == KeyCode::Char('p');
+            connect_or_pair_device(state, client_cert, client_key, tv_event_tx, force_pairing).await;
         }
         _ => {}
     }
@@ -1347,36 +1295,7 @@ async fn handle_macros_keys(key: crossterm::event::KeyEvent, state: &mut AppStat
             }
         }
         KeyCode::Enter => {
-            if let Some(m) = state.config.macros.get(state.selected_macro_idx).cloned() {
-                state.log(LogLevel::Info, format!("Running macro: {}", m.name));
-                state.running_macro = Some(m.name.clone());
-
-                if let Some(client) = state.client_handle.clone() {
-                    tokio::spawn(async move {
-                        for step in m.steps {
-                            if step.action.starts_with("key:") {
-                                if let Some(code) = parse_keycode(&step.action[4..]) {
-                                    let _ = client.send_key(code, RemoteDirection::Short).await;
-                                }
-                            } else if step.action.starts_with("wait:") {
-                                if let Ok(ms) = step.action[5..].parse::<u64>() {
-                                    tokio::time::sleep(Duration::from_millis(ms)).await;
-                                }
-                            } else if step.action.starts_with("app:") {
-                                let _ = client.launch_app(step.action[4..].to_string()).await;
-                            } else if step.action.starts_with("text:") {
-                                let _ = client.send_text(step.action[5..].to_string()).await;
-                            } else if step.action.starts_with("keys:") {
-                                let _ = client.send_text_keys(step.action[5..].to_string(), false).await;
-                            } else if step.action.starts_with("ime:") {
-                                let _ = client.send_text_ime(step.action[4..].to_string(), false).await;
-                            } else if step.action.starts_with("search:") {
-                                let _ = client.search_on_tv(step.action[7..].to_string()).await;
-                            }
-                        }
-                    });
-                }
-            }
+            run_macro_by_index(state, state.selected_macro_idx);
         }
         _ => {}
     }
@@ -1405,3 +1324,726 @@ fn handle_logs_keys(key: crossterm::event::KeyEvent, state: &mut AppState) {
         _ => {}
     }
 }
+
+async fn connect_or_pair_device(
+    state: &mut AppState,
+    client_cert: &openssl::x509::X509,
+    client_key: &openssl::pkey::PKey<openssl::pkey::Private>,
+    tv_event_tx: &mpsc::Sender<TvEvent>,
+    force_pairing: bool,
+) {
+    let target_ip = if state.devices_focus_saved {
+        state.config.devices.get(state.selected_saved_idx).map(|d| (d.name.clone(), d.ip.clone(), d.paired))
+    } else {
+        state.discovered_devices.get(state.selected_discovered_idx).map(|d| {
+            let paired = state.config.devices.iter().any(|s| s.ip == d.ip.to_string() && s.paired);
+            (d.name.clone(), d.ip.to_string(), paired)
+        })
+    };
+
+    if let Some((name, ip_str, paired)) = target_ip {
+        state.config.set_active_device(&ip_str);
+
+        if paired && !force_pairing {
+            // Connect directly
+            if let Ok(ip) = ip_str.parse::<std::net::IpAddr>() {
+                let target = SocketAddr::new(ip, 6466);
+                let cert_c = client_cert.clone();
+                let key_c = client_key.clone();
+                let tx_c = tv_event_tx.clone();
+                state.connection_status = ConnectionStatus::Connecting(ip_str.clone());
+                state.log(LogLevel::Info, format!("Connecting to {} ({})", name, ip_str));
+
+                let handle_res = TvConnection::connect(target, cert_c, key_c, tx_c).await;
+                match handle_res {
+                    Ok(handle) => {
+                        state.client_handle = Some(handle);
+                        state.active_tab = ActiveTab::Remote;
+                    }
+                    Err(e) => {
+                        state.connection_status = ConnectionStatus::Error(format!("{}", e));
+                        state.log(LogLevel::Error, format!("Failed to connect: {}", e));
+                    }
+                }
+            }
+        } else {
+            // Trigger Pairing Handshake!
+            if let Ok(ip) = ip_str.parse::<std::net::IpAddr>() {
+                let target = SocketAddr::new(ip, PAIRING_PORT);
+                state.connection_status = ConnectionStatus::Pairing(ip_str.clone());
+                state.log(LogLevel::Info, format!("Starting pairing handshake with {} ({})", name, ip_str));
+
+                let cert_c = client_cert.clone();
+                let key_c = client_key.clone();
+                let modal_name = name.clone();
+                let modal_ip = ip_str.clone();
+
+                match PairingSession::start(target, "Google TV TUI", cert_c, key_c).await {
+                    Ok(session) => {
+                        state.modal = ActiveModal::Pairing(PairingModalState {
+                            ip: modal_ip,
+                            name: modal_name,
+                            pin_input: String::new(),
+                            error: None,
+                            session: Some(Arc::new(Mutex::new(Some(session)))),
+                            is_submitting: false,
+                        });
+                    }
+                    Err(e) => {
+                        state.log(LogLevel::Error, format!("Pairing handshake initiation failed: {}", e));
+                        state.connection_status = ConnectionStatus::Error(format!("{}", e));
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn run_macro_by_index(state: &mut AppState, idx: usize) {
+    if let Some(m) = state.config.macros.get(idx).cloned() {
+        state.log(LogLevel::Info, format!("Running macro: {}", m.name));
+        state.running_macro = Some(m.name.clone());
+
+        if let Some(client) = state.client_handle.clone() {
+            tokio::spawn(async move {
+                for step in m.steps {
+                    if step.action.starts_with("key:") {
+                        if let Some(code) = parse_keycode(&step.action[4..]) {
+                            let _ = client.send_key(code, RemoteDirection::Short).await;
+                        }
+                    } else if step.action.starts_with("wait:") {
+                        if let Ok(ms) = step.action[5..].parse::<u64>() {
+                            tokio::time::sleep(Duration::from_millis(ms)).await;
+                        }
+                    } else if step.action.starts_with("app:") {
+                        let _ = client.launch_app(step.action[4..].to_string()).await;
+                    } else if step.action.starts_with("text:") {
+                        let _ = client.send_text(step.action[5..].to_string()).await;
+                    } else if step.action.starts_with("keys:") {
+                        let _ = client.send_text_keys(step.action[5..].to_string(), false).await;
+                    } else if step.action.starts_with("ime:") {
+                        let _ = client.send_text_ime(step.action[4..].to_string(), false).await;
+                    } else if step.action.starts_with("search:") {
+                        let _ = client.search_on_tv(step.action[7..].to_string()).await;
+                    }
+                }
+            });
+        }
+    }
+}
+
+fn get_modal_rect(percent_x: u16, percent_y: u16, size: ratatui::layout::Size) -> ratatui::layout::Rect {
+    let pad_x = size.width.saturating_sub(size.width * percent_x / 100) / 2;
+    let pad_y = size.height.saturating_sub(size.height * percent_y / 100) / 2;
+    ratatui::layout::Rect {
+        x: pad_x,
+        y: pad_y,
+        width: size.width.saturating_sub(pad_x * 2),
+        height: size.height.saturating_sub(pad_y * 2),
+    }
+}
+
+async fn handle_mouse_event(
+    mouse: MouseEvent,
+    term_size: ratatui::layout::Size,
+    state: &mut AppState,
+    client_cert: &openssl::x509::X509,
+    client_key: &openssl::pkey::PKey<openssl::pkey::Private>,
+    tv_event_tx: &mpsc::Sender<TvEvent>,
+    disc_tx: &mpsc::Sender<DiscoveredDevice>,
+) -> Result<()> {
+    match mouse.kind {
+        MouseEventKind::ScrollUp => match state.active_tab {
+            ActiveTab::Remote => {
+                send_remote_key(state, RemoteKeyCode::KeycodeVolumeUp).await;
+            }
+            ActiveTab::Logs => {
+                state.logs_scroll = state.logs_scroll.saturating_add(3);
+            }
+            ActiveTab::TextInput => {
+                if !state.text_input_history.is_empty() && state.selected_history_idx > 0 {
+                    state.selected_history_idx -= 1;
+                    if let Some(query) = state.text_input_history.get(state.selected_history_idx) {
+                        state.text_input_buffer = query.clone();
+                    }
+                }
+            }
+            ActiveTab::Apps => {
+                if state.selected_app_idx > 0 {
+                    state.selected_app_idx -= 1;
+                }
+            }
+            ActiveTab::Devices => {
+                if state.devices_focus_saved {
+                    if state.selected_saved_idx > 0 {
+                        state.selected_saved_idx -= 1;
+                    }
+                } else if state.selected_discovered_idx > 0 {
+                    state.selected_discovered_idx -= 1;
+                }
+            }
+            ActiveTab::Macros => {
+                if state.selected_macro_idx > 0 {
+                    state.selected_macro_idx -= 1;
+                }
+            }
+        },
+        MouseEventKind::ScrollDown => match state.active_tab {
+            ActiveTab::Remote => {
+                send_remote_key(state, RemoteKeyCode::KeycodeVolumeDown).await;
+            }
+            ActiveTab::Logs => {
+                state.logs_scroll = state.logs_scroll.saturating_sub(3);
+            }
+            ActiveTab::TextInput => {
+                if !state.text_input_history.is_empty()
+                    && state.selected_history_idx + 1 < state.text_input_history.len()
+                {
+                    state.selected_history_idx += 1;
+                    if let Some(query) = state.text_input_history.get(state.selected_history_idx) {
+                        state.text_input_buffer = query.clone();
+                    }
+                }
+            }
+            ActiveTab::Apps => {
+                let total = state.filtered_apps().len();
+                if total > 0 && state.selected_app_idx + 1 < total {
+                    state.selected_app_idx += 1;
+                }
+            }
+            ActiveTab::Devices => {
+                if state.devices_focus_saved {
+                    if state.selected_saved_idx + 1 < state.config.devices.len() {
+                        state.selected_saved_idx += 1;
+                    }
+                } else if state.selected_discovered_idx + 1 < state.discovered_devices.len() {
+                    state.selected_discovered_idx += 1;
+                }
+            }
+            ActiveTab::Macros => {
+                if state.selected_macro_idx + 1 < state.config.macros.len() {
+                    state.selected_macro_idx += 1;
+                }
+            }
+        },
+        MouseEventKind::Down(MouseButton::Left) => {
+            let col = mouse.column;
+            let row = mouse.row;
+
+            // 1. If Modal is active
+            match &mut state.modal {
+                ActiveModal::Help => {
+                    state.modal = ActiveModal::None;
+                    return Ok(());
+                }
+                ActiveModal::AppEditor(app_state) => {
+                    let modal_rect = get_modal_rect(65, 55, term_size);
+                    if col < modal_rect.x
+                        || col >= modal_rect.x + modal_rect.width
+                        || row < modal_rect.y
+                        || row >= modal_rect.y + modal_rect.height
+                    {
+                        state.modal = ActiveModal::None;
+                        return Ok(());
+                    }
+                    let inner_y = modal_rect.y + 1;
+                    if row == inner_y + 1 {
+                        app_state.active_field = 0;
+                    } else if row == inner_y + 3 {
+                        app_state.active_field = 1;
+                    } else if row == inner_y + 5 {
+                        app_state.active_field = 2;
+                    } else if row == inner_y + 7 {
+                        app_state.active_field = 3;
+                    } else if row == inner_y + 9 {
+                        app_state.active_field = 4;
+                        app_state.is_quick_app = !app_state.is_quick_app;
+                    }
+                    return Ok(());
+                }
+                ActiveModal::MacroEditor(macro_state) => {
+                    let modal_rect = get_modal_rect(70, 60, term_size);
+                    if col < modal_rect.x
+                        || col >= modal_rect.x + modal_rect.width
+                        || row < modal_rect.y
+                        || row >= modal_rect.y + modal_rect.height
+                    {
+                        state.modal = ActiveModal::None;
+                        return Ok(());
+                    }
+                    let inner_y = modal_rect.y + 1;
+                    if row == inner_y + 1 {
+                        macro_state.active_field = 0;
+                    } else if row == inner_y + 3 {
+                        macro_state.active_field = 1;
+                    } else if row == inner_y + 5 {
+                        macro_state.active_field = 2;
+                    }
+                    return Ok(());
+                }
+                ActiveModal::AddDevice(_) | ActiveModal::LaunchUrl(_) | ActiveModal::Pairing(_) => {
+                    let modal_rect = get_modal_rect(60, 45, term_size);
+                    if col < modal_rect.x
+                        || col >= modal_rect.x + modal_rect.width
+                        || row < modal_rect.y
+                        || row >= modal_rect.y + modal_rect.height
+                    {
+                        state.modal = ActiveModal::None;
+                        return Ok(());
+                    }
+                    return Ok(());
+                }
+                ActiveModal::None => {}
+            }
+
+            // 2. Header Bar (rows 0..=2)
+            if row <= 2 {
+                if col >= term_size.width.saturating_sub(25) {
+                    state.modal = ActiveModal::Help;
+                }
+                return Ok(());
+            }
+
+            // 3. Tabs Bar (rows 3..=5)
+            if row >= 3 && row <= 5 {
+                if col <= 15 {
+                    state.active_tab = ActiveTab::Remote;
+                } else if col <= 31 {
+                    state.active_tab = ActiveTab::Devices;
+                } else if col <= 44 {
+                    state.active_tab = ActiveTab::Apps;
+                } else if col <= 66 {
+                    state.active_tab = ActiveTab::TextInput;
+                    state.text_input_focused = true;
+                } else if col <= 81 {
+                    state.active_tab = ActiveTab::Macros;
+                } else {
+                    state.active_tab = ActiveTab::Logs;
+                }
+                return Ok(());
+            }
+
+            // 4. Tab Views (row >= 6)
+            match state.active_tab {
+                ActiveTab::Remote => {
+                    if col < 48 {
+                        // Remote Body Clicks
+                        if row == 7 {
+                            // Power (col 4..=21) & Input (col 24..=42)
+                            if col >= 4 && col <= 21 {
+                                send_remote_key(state, RemoteKeyCode::KeycodePower).await;
+                            } else if col >= 24 && col <= 42 {
+                                send_remote_key(state, RemoteKeyCode::KeycodeTvInput).await;
+                            }
+                        } else if row >= 9 && row <= 15 {
+                            // D-Pad
+                            if (row == 9 || row == 10 || row == 11) && (col >= 16 && col <= 30) {
+                                send_remote_key(state, RemoteKeyCode::KeycodeDpadUp).await;
+                            } else if row == 12 && (col >= 8 && col <= 17) {
+                                send_remote_key(state, RemoteKeyCode::KeycodeDpadLeft).await;
+                            } else if row == 12 && (col >= 18 && col <= 28) {
+                                send_remote_key(state, RemoteKeyCode::KeycodeDpadCenter).await;
+                            } else if row == 12 && (col >= 29 && col <= 38) {
+                                send_remote_key(state, RemoteKeyCode::KeycodeDpadRight).await;
+                            } else if (row == 13 || row == 14 || row == 15) && (col >= 16 && col <= 30) {
+                                send_remote_key(state, RemoteKeyCode::KeycodeDpadDown).await;
+                            }
+                        } else if row == 17 {
+                            // Nav 1: Back, Home, Search
+                            if col >= 2 && col <= 15 {
+                                send_remote_key(state, RemoteKeyCode::KeycodeBack).await;
+                            } else if col >= 16 && col <= 31 {
+                                send_remote_key(state, RemoteKeyCode::KeycodeHome).await;
+                            } else if col >= 32 && col <= 46 {
+                                send_remote_key(state, RemoteKeyCode::KeycodeSearch).await;
+                            }
+                        } else if row == 18 {
+                            // Nav 2: Vol-, Mute, Vol+
+                            if col >= 2 && col <= 16 {
+                                send_remote_key(state, RemoteKeyCode::KeycodeVolumeDown).await;
+                            } else if col >= 17 && col <= 31 {
+                                send_remote_key(state, RemoteKeyCode::KeycodeVolumeMute).await;
+                            } else if col >= 32 && col <= 46 {
+                                send_remote_key(state, RemoteKeyCode::KeycodeVolumeUp).await;
+                            }
+                        } else if row == 19 {
+                            // Nav 3: Rewind, Play/Pause, FastForward
+                            if col >= 2 && col <= 14 {
+                                send_remote_key(state, RemoteKeyCode::KeycodeMediaRewind).await;
+                            } else if col >= 15 && col <= 33 {
+                                send_remote_key(state, RemoteKeyCode::KeycodeMediaPlayPause).await;
+                            } else if col >= 34 && col <= 46 {
+                                send_remote_key(state, RemoteKeyCode::KeycodeMediaFastForward).await;
+                            }
+                        } else if row == 20 {
+                            // Nav 4: CH-, Settings, CH+
+                            if col >= 2 && col <= 13 {
+                                send_remote_key(state, RemoteKeyCode::KeycodeChannelDown).await;
+                            } else if col >= 14 && col <= 34 {
+                                send_remote_key(state, RemoteKeyCode::KeycodeSettings).await;
+                            } else if col >= 35 && col <= 46 {
+                                send_remote_key(state, RemoteKeyCode::KeycodeChannelUp).await;
+                            }
+                        } else if row >= 23 && row <= 25 {
+                            // Quick Apps (rows 23, 24, 25)
+                            let quick_apps: Vec<_> = state
+                                .config
+                                .custom_apps
+                                .iter()
+                                .filter(|a| a.is_quick_app)
+                                .take(6)
+                                .cloned()
+                                .collect();
+                            let row_offset = (row - 23) as usize;
+                            let is_right = col >= 24;
+                            let app_idx = row_offset * 2 + if is_right { 1 } else { 0 };
+                            if let Some(app) = quick_apps.get(app_idx) {
+                                if let Some(client) = &state.client_handle {
+                                    let _ = client.launch_app(app.link.clone()).await;
+                                    state.log(LogLevel::Success, format!("Launched Quick App: {}", app.name));
+                                }
+                            }
+                        }
+                    }
+                }
+                ActiveTab::Devices => {
+                    let half = term_size.width / 2;
+                    let footer_y = term_size.height.saturating_sub(3);
+
+                    if row < footer_y {
+                        let idx = (row.saturating_sub(7) / 2) as usize;
+                        if col < half {
+                            // Discovered Panel
+                            state.devices_focus_saved = false;
+                            if idx < state.discovered_devices.len() {
+                                state.selected_discovered_idx = idx;
+                            }
+                        } else {
+                            // Saved Panel
+                            state.devices_focus_saved = true;
+                            if idx < state.config.devices.len() {
+                                if state.selected_saved_idx == idx {
+                                    // Connect/pair directly on re-click
+                                    connect_or_pair_device(state, client_cert, client_key, tv_event_tx, false).await;
+                                } else {
+                                    state.selected_saved_idx = idx;
+                                }
+                            }
+                        }
+                    } else {
+                        // Footer bar hints: [Enter] Connect/Pair  [s] Rescan  [a] Add Device  [d] Delete
+                        if col <= 24 {
+                            connect_or_pair_device(state, client_cert, client_key, tv_event_tx, false).await;
+                        } else if col <= 36 {
+                            state.is_scanning = true;
+                            state.discovered_devices.clear();
+                            state.log(LogLevel::Info, "Initiating mDNS discovery scan...");
+                            let _ = DiscoveryManager::start_discovery(disc_tx.clone(), Duration::from_secs(8)).await;
+                        } else if col <= 50 {
+                            state.modal = ActiveModal::AddDevice(AddDeviceModalState::default());
+                        } else if col <= 62 {
+                            if state.devices_focus_saved
+                                && !state.config.devices.is_empty()
+                                && state.selected_saved_idx < state.config.devices.len()
+                            {
+                                let ip = state.config.devices[state.selected_saved_idx].ip.clone();
+                                state.config.remove_device(&ip);
+                                state.log(LogLevel::Warning, format!("Removed device {}", ip));
+                                if state.selected_saved_idx >= state.config.devices.len() && state.selected_saved_idx > 0 {
+                                    state.selected_saved_idx -= 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                ActiveTab::Apps => {
+                    let footer_y = term_size.height.saturating_sub(3);
+                    if row >= 6 && row <= 8 {
+                        // Search bar clicked - clear filter to view all
+                        state.apps_search.clear();
+                    } else if row >= 10 && row < footer_y {
+                        let app_idx = (row - 10) as usize;
+                        let filtered = state.filtered_apps();
+                        if app_idx < filtered.len() {
+                            if state.selected_app_idx == app_idx {
+                                // Launch!
+                                if let Some(app) = filtered.get(app_idx) {
+                                    let link = app.link.clone();
+                                    let name = app.name.clone();
+                                    if let Some(client) = &state.client_handle {
+                                        let _ = client.launch_app(link).await;
+                                        state.log(LogLevel::Success, format!("Launched {}", name));
+                                    }
+                                }
+                            } else {
+                                state.selected_app_idx = app_idx;
+                            }
+                        }
+                    } else if row >= footer_y {
+                        // Footer hints: [Enter] Launch [a] Add App [e] Edit App [d] Delete [Space] Toggle Quick Remote [u] Custom URL
+                        let filtered = state.filtered_apps();
+                        if col <= 18 {
+                            // Launch
+                            if let Some(app) = filtered.get(state.selected_app_idx) {
+                                let link = app.link.clone();
+                                let name = app.name.clone();
+                                if let Some(client) = &state.client_handle {
+                                    let _ = client.launch_app(link).await;
+                                    state.log(LogLevel::Success, format!("Launched {}", name));
+                                }
+                            }
+                        } else if col <= 30 {
+                            // Add App
+                            state.modal = ActiveModal::AppEditor(AppModalState {
+                                is_editing: false,
+                                editing_index: None,
+                                name_input: String::new(),
+                                link_input: String::new(),
+                                category_input: "Video".to_string(),
+                                hotkey_input: String::new(),
+                                is_quick_app: true,
+                                active_field: 0,
+                                error: None,
+                            });
+                        } else if col <= 43 {
+                            // Edit App
+                            if let Some(app) = filtered.get(state.selected_app_idx) {
+                                let real_idx = state
+                                    .config
+                                    .custom_apps
+                                    .iter()
+                                    .position(|a| a.name == app.name && a.link == app.link);
+                                if let Some(idx) = real_idx {
+                                    let app = &state.config.custom_apps[idx];
+                                    state.modal = ActiveModal::AppEditor(AppModalState {
+                                        is_editing: true,
+                                        editing_index: Some(idx),
+                                        name_input: app.name.clone(),
+                                        link_input: app.link.clone(),
+                                        category_input: app.category.clone(),
+                                        hotkey_input: app.hotkey.map(|c| c.to_string()).unwrap_or_default(),
+                                        is_quick_app: app.is_quick_app,
+                                        active_field: 0,
+                                        error: None,
+                                    });
+                                }
+                            }
+                        } else if col <= 55 {
+                            // Delete App
+                            if let Some(app) = filtered.get(state.selected_app_idx) {
+                                let real_idx = state
+                                    .config
+                                    .custom_apps
+                                    .iter()
+                                    .position(|a| a.name == app.name && a.link == app.link);
+                                if let Some(idx) = real_idx {
+                                    let name = state.config.custom_apps[idx].name.clone();
+                                    let _ = state.config.delete_app(idx);
+                                    state.log(LogLevel::Warning, format!("Deleted app: {}", name));
+                                    if state.selected_app_idx >= state.filtered_apps().len() && state.selected_app_idx > 0 {
+                                        state.selected_app_idx -= 1;
+                                    }
+                                }
+                            }
+                        } else if col <= 80 {
+                            // Toggle Quick Remote
+                            if let Some(app) = filtered.get(state.selected_app_idx) {
+                                let real_idx = state
+                                    .config
+                                    .custom_apps
+                                    .iter()
+                                    .position(|a| a.name == app.name && a.link == app.link);
+                                if let Some(idx) = real_idx {
+                                    let _ = state.config.toggle_quick_app(idx);
+                                    let is_quick = state.config.custom_apps[idx].is_quick_app;
+                                    let name = &state.config.custom_apps[idx].name;
+                                    state.log(
+                                        LogLevel::Info,
+                                        format!(
+                                            "{} {} remote quick launch",
+                                            if is_quick { "Added" } else { "Removed" },
+                                            name
+                                        ),
+                                    );
+                                }
+                            }
+                        } else {
+                            // Custom URL modal
+                            state.modal = ActiveModal::LaunchUrl(LaunchUrlModalState::default());
+                        }
+                    }
+                }
+                ActiveTab::TextInput => {
+                    let footer_y = term_size.height.saturating_sub(4);
+                    if row >= 6 && row <= 15 {
+                        state.text_input_focused = true;
+                        if row == 7 || row == 8 {
+                            state.text_input_mode = state.text_input_mode.next();
+                            state.log(
+                                LogLevel::Info,
+                                format!("Switched text mode: {}", state.text_input_mode.label()),
+                            );
+                        }
+                    } else if row >= 17 && row < footer_y {
+                        let hist_idx = (row - 17) as usize;
+                        if hist_idx < state.text_input_history.len() {
+                            state.selected_history_idx = hist_idx;
+                            if let Some(h) = state.text_input_history.get(hist_idx) {
+                                state.text_input_buffer = h.clone();
+                            }
+                            state.text_input_focused = true;
+                            state.log(
+                                LogLevel::Info,
+                                format!("Selected history query: \"{}\"", state.text_input_buffer),
+                            );
+                        }
+                    } else if row >= footer_y {
+                        // Footer hints: [Enter] Send & Drop Focus   [Shift+Enter] Send & Submit   [Ctrl+S] TV Search   [Esc] Drop Focus
+                        let text = if !state.text_input_buffer.trim().is_empty() {
+                            state.text_input_buffer.trim().to_string()
+                        } else if let Some(h) = state.text_input_history.get(state.selected_history_idx) {
+                            h.clone()
+                        } else {
+                            String::new()
+                        };
+
+                        if col <= 26 {
+                            // Send & Drop Focus
+                            if !text.is_empty() {
+                                if let Some(client) = &state.client_handle {
+                                    match state.text_input_mode {
+                                        TextInputMode::Smart => {
+                                            let _ = client.send_text(text.clone()).await;
+                                        }
+                                        TextInputMode::Keystroke => {
+                                            let _ = client.send_text_keys(text.clone(), false).await;
+                                        }
+                                        TextInputMode::Ime => {
+                                            let _ = client.send_text_ime(text.clone(), false).await;
+                                        }
+                                    }
+                                    state.log(
+                                        LogLevel::Success,
+                                        format!("Sent text [{}] to TV: \"{}\"", state.text_input_mode.label(), text),
+                                    );
+                                    state.add_search_history(&text);
+                                    state.text_input_buffer.clear();
+                                    state.text_input_focused = false;
+                                }
+                            }
+                        } else if col <= 50 {
+                            // Send & Submit
+                            if !text.is_empty() {
+                                if let Some(client) = &state.client_handle {
+                                    match state.text_input_mode {
+                                        TextInputMode::Smart => {
+                                            let _ = client.send_text_with_enter(text.clone()).await;
+                                        }
+                                        TextInputMode::Keystroke => {
+                                            let _ = client.send_text_keys(text.clone(), true).await;
+                                        }
+                                        TextInputMode::Ime => {
+                                            let _ = client.send_text_ime(text.clone(), true).await;
+                                        }
+                                    }
+                                    state.log(
+                                        LogLevel::Success,
+                                        format!(
+                                            "Sent text + Enter [{}] to TV: \"{}\"",
+                                            state.text_input_mode.label(),
+                                            text
+                                        ),
+                                    );
+                                    state.add_search_history(&text);
+                                    state.text_input_buffer.clear();
+                                    state.text_input_focused = false;
+                                }
+                            }
+                        } else if col <= 68 {
+                            // TV Search
+                            if !text.is_empty() {
+                                if let Some(client) = &state.client_handle {
+                                    let _ = client.search_on_tv(text.clone()).await;
+                                    state.log(LogLevel::Success, format!("Triggered TV Search: \"{}\"", text));
+                                    state.add_search_history(&text);
+                                    state.text_input_buffer.clear();
+                                    state.text_input_focused = false;
+                                }
+                            }
+                        } else {
+                            // Drop Focus
+                            state.text_input_focused = false;
+                        }
+                    }
+                }
+                ActiveTab::Macros => {
+                    let half = term_size.width * 45 / 100;
+                    let footer_y = term_size.height.saturating_sub(3);
+                    if row < footer_y && col < half {
+                        let idx = (row.saturating_sub(7) / 2) as usize;
+                        if idx < state.config.macros.len() {
+                            if state.selected_macro_idx == idx {
+                                run_macro_by_index(state, idx);
+                            } else {
+                                state.selected_macro_idx = idx;
+                            }
+                        }
+                    } else if row >= footer_y {
+                        // Footer hints: [Enter] Run [a] Add [e] Edit [d] Delete
+                        if col <= 18 {
+                            run_macro_by_index(state, state.selected_macro_idx);
+                        } else if col <= 28 {
+                            state.modal = ActiveModal::MacroEditor(MacroModalState {
+                                is_editing: false,
+                                editing_index: None,
+                                name_input: String::new(),
+                                description_input: String::new(),
+                                steps_input: String::new(),
+                                active_field: 0,
+                                error: None,
+                            });
+                        } else if col <= 40 {
+                            if let Some(m) = state.config.macros.get(state.selected_macro_idx) {
+                                state.modal = ActiveModal::MacroEditor(MacroModalState {
+                                    is_editing: true,
+                                    editing_index: Some(state.selected_macro_idx),
+                                    name_input: m.name.clone(),
+                                    description_input: m.description.clone(),
+                                    steps_input: AppConfig::format_macro_steps(&m.steps),
+                                    active_field: 0,
+                                    error: None,
+                                });
+                            }
+                        } else if col <= 55 {
+                            if !state.config.macros.is_empty()
+                                && state.selected_macro_idx < state.config.macros.len()
+                            {
+                                let name = state.config.macros[state.selected_macro_idx].name.clone();
+                                let _ = state.config.delete_macro(state.selected_macro_idx);
+                                state.log(LogLevel::Warning, format!("Deleted macro: {}", name));
+                                if state.selected_macro_idx >= state.config.macros.len() && state.selected_macro_idx > 0 {
+                                    state.selected_macro_idx -= 1;
+                                }
+                            }
+                        }
+                    }
+                }
+                ActiveTab::Logs => {
+                    let footer_y = term_size.height.saturating_sub(3);
+                    if row >= footer_y {
+                        if col <= 20 {
+                            state.logs.clear();
+                            state.logs_scroll = 0;
+                            state.log(LogLevel::Info, "Logs cleared.");
+                        } else {
+                            state.logs_scroll = 0;
+                        }
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+

@@ -15,6 +15,14 @@ Built on the **Android TV Remote Protocol v2** using mutual TLS (mTLS), Protocol
   - Media & Volume: `Play/Pause` (`Space`), `Rewind` (`[`), `Fast Forward` (`]`), `Volume Up/Down` (`+`/`-`), `Mute` (`m`), `Channel +/-`.
   - Dedicated Streaming Shortcuts: `YouTube` (`y`), `Netflix` (`n`), `Prime Video` (`r`), `Disney+` (`d`), `Spotify`.
   - Vim keybindings (`h`, `j`, `k`, `l`) and arrow keys supported.
+- **🖱️ Full Mouse & Scroll Wheel Support (NEW in v0.3.0)**:
+  - **Click-to-Switch Tabs**: Seamlessly switch between Remote, Devices, Apps, Text / Search, Macros, and Logs.
+  - **Clickable Virtual Remote**: Click buttons directly on the virtual remote (D-Pad, OK, Power, Input, Volume, Play/Pause, Channel, Settings, and Quick Apps).
+  - **Intuitive Scroll Wheel**:
+    - **Remote Tab**: Scroll Up for Volume Up, Scroll Down for Volume Down.
+    - **Logs Tab**: Smooth vertical scrolling through activity & protocol event logs.
+    - **Lists (Apps, Macros, Devices, Search History)**: Scroll Up/Down to navigate items.
+  - **Click-to-Focus & Launch**: Click text entry box to type, click history queries to load, click apps/macros to select or launch.
 - **🌐 Zero-Conf Discovery (mDNS)**:
   - Scans local Wi-Fi for `_androidtvremote2._tcp.local.` and `_googlecast._tcp.local.` services.
   - One-keystroke re-scanning (`s`) with live spinner and automatic IP detection.
@@ -102,7 +110,7 @@ sudo chmod +x /usr/local/bin/googletv-tui
 Download the archive containing the binary, documentation, and license:
 
 ```bash
-curl -sSL https://github.com/Andrewx82/googletv-tui/releases/latest/download/googletv-tui-v0.2.2-linux-x86_64.tar.gz | tar -xz
+curl -sSL https://github.com/Andrewx82/googletv-tui/releases/latest/download/googletv-tui-v0.3.0-linux-x86_64.tar.gz | tar -xz
 sudo mv googletv-tui /usr/local/bin/
 ```
 

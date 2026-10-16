@@ -193,7 +193,28 @@ pub fn render(frame: &mut Frame, area: Rect) {
         ]),
         Line::from(vec![]),
         Line::from(vec![Span::styled(
-            "Press [Esc] or [?] to close this help dialog",
+            "Mouse Friendly Controls (NEW in v0.3.0)",
+            Style::default().fg(Theme::GOOGLE_YELLOW).add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(vec![
+            Span::styled("  Tab Bar Clicking    ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Click any tab (Remote, Devices, Apps, etc.) to switch views"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Virtual Remote      ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Click D-Pad, OK, Power, Vol, Home, Back, Play/Pause, Quick Apps"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Mouse Scroll Wheel  ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Volume Up/Down (Remote), scroll logs (Logs), navigate lists"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Lists & Text Focus  ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Click apps/macros to launch; click text box to type; click history"),
+        ]),
+        Line::from(vec![]),
+        Line::from(vec![Span::styled(
+            "Press [Esc], [?], or click anywhere to close this help dialog",
             Style::default().fg(Theme::TEXT_MUTED),
         )]),
     ];

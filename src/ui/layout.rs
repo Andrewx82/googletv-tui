@@ -62,7 +62,7 @@ fn render_header(frame: &mut Frame, state: &AppState, area: Rect) {
         Span::styled("l", Style::default().fg(Theme::GOOGLE_GREEN).add_modifier(Modifier::BOLD)),
         Span::styled("e", Style::default().fg(Theme::GOOGLE_RED).add_modifier(Modifier::BOLD)),
         Span::styled(" TV Remote TUI ", Style::default().fg(Theme::TEXT_PRIMARY).add_modifier(Modifier::BOLD)),
-        Span::styled("v0.1.0 ", Style::default().fg(Theme::TEXT_MUTED)),
+        Span::styled(concat!("v", env!("CARGO_PKG_VERSION"), " "), Style::default().fg(Theme::TEXT_MUTED)),
         Span::raw(" │  Status: "),
         Span::styled(conn_badge, Style::default().fg(conn_color).add_modifier(Modifier::BOLD)),
     ];
