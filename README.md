@@ -30,14 +30,18 @@ Built on the **Android TV Remote Protocol v2** using mutual TLS (mTLS), Protocol
   - **Custom Hotkeys**: Assign any single-character shortcut key to instantly launch custom apps from the Remote tab.
   - Live fuzzy search / filter bar.
   - Custom URL & Android Intent launcher modal (`u`) to trigger any web link, app package, or intent URI.
-- **⌨ TV Virtual Keyboard / IME (Tab 4)**:
+- **⌨ TV Virtual Keyboard, IME & Keystroke Injection (Tab 4)**:
   - Type directly on your computer keyboard to inject text into any active text field or search bar on the TV.
-  - IME batch synchronization maintaining exact field counters.
-  - Search history with instant re-send.
+  - **Triple Input Modes** (toggle anytime with `Tab`):
+    - **Smart (Auto)**: Automatically uses IME batch editing when Android TV reports an active input field; falls back to hardware keystroke injection.
+    - **Keystrokes**: Injects character-by-character key events (`RemoteKeyInject`). Works in YouTube, Netflix, Prime Video, Plex, and canvas/web keyboards.
+    - **IME Batch**: Direct Android IME batch edit with active field counter synchronization (`RemoteImeShowRequest` & `RemoteImeBatchEdit`).
+  - Real-time TV input field detection with live status badge and field ID tracking.
+  - Search history with instant re-send (`↑`/`↓` and `Enter`).
 - **⚡ Macro Sequences & Custom Automation (Tab 5)**:
   - Automated multi-step actions (e.g. *Movie Night*: Wake TV → Delay 2s → Launch Netflix; *Bedtime Sleep*: Go Home → Wait 1s → Sleep).
   - **Full Macro Editor**: Add custom macros (`a`), edit existing macros (`e`), delete macros (`d` / `Delete`).
-  - Intuitive step syntax: `key:<KEYCODE>`, `wait:<ms>`, `app:<URI>`, `text:<QUERY>`.
+  - Intuitive step syntax: `key:<KEYCODE>`, `wait:<ms>`, `app:<URI>`, `text:<QUERY>`, `keys:<QUERY>`, `ime:<QUERY>`.
   - Persisted directly to `~/.config/googletv-tui/config.json`.
 - **📜 Live Protocol & Activity Inspector (Tab 6)**:
   - Real-time stream of incoming and outgoing Protobuf packets, ping-pong keepalive heartbeats, power state changes, and volume adjustments.
@@ -49,7 +53,8 @@ Built on the **Android TV Remote Protocol v2** using mutual TLS (mTLS), Protocol
     googletv-tui pair 192.168.1.100
     googletv-tui key 192.168.1.100 KEYCODE_HOME
     googletv-tui launch 192.168.1.100 "https://www.youtube.com"
-    googletv-tui text 192.168.1.100 "Stranger Things"
+    googletv-tui text 192.168.1.100 "Stranger Things" --enter
+    googletv-tui text 192.168.1.100 "Cyberpunk 2077" --mode keys
     googletv-tui list
     ```
 

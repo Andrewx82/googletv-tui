@@ -115,3 +115,80 @@ pub fn keycode_display_name(code: RemoteKeyCode) -> &'static str {
         _ => "Unknown",
     }
 }
+
+/// Maps an ASCII character into an Android RemoteKeyCode for hardware/on-screen keystroke injection.
+pub fn char_to_keycode(c: char) -> Option<RemoteKeyCode> {
+    match c {
+        'a' | 'A' => Some(RemoteKeyCode::KeycodeA),
+        'b' | 'B' => Some(RemoteKeyCode::KeycodeB),
+        'c' | 'C' => Some(RemoteKeyCode::KeycodeC),
+        'd' | 'D' => Some(RemoteKeyCode::KeycodeD),
+        'e' | 'E' => Some(RemoteKeyCode::KeycodeE),
+        'f' | 'F' => Some(RemoteKeyCode::KeycodeF),
+        'g' | 'G' => Some(RemoteKeyCode::KeycodeG),
+        'h' | 'H' => Some(RemoteKeyCode::KeycodeH),
+        'i' | 'I' => Some(RemoteKeyCode::KeycodeI),
+        'j' | 'J' => Some(RemoteKeyCode::KeycodeJ),
+        'k' | 'K' => Some(RemoteKeyCode::KeycodeK),
+        'l' | 'L' => Some(RemoteKeyCode::KeycodeL),
+        'm' | 'M' => Some(RemoteKeyCode::KeycodeM),
+        'n' | 'N' => Some(RemoteKeyCode::KeycodeN),
+        'o' | 'O' => Some(RemoteKeyCode::KeycodeO),
+        'p' | 'P' => Some(RemoteKeyCode::KeycodeP),
+        'q' | 'Q' => Some(RemoteKeyCode::KeycodeQ),
+        'r' | 'R' => Some(RemoteKeyCode::KeycodeR),
+        's' | 'S' => Some(RemoteKeyCode::KeycodeS),
+        't' | 'T' => Some(RemoteKeyCode::KeycodeT),
+        'u' | 'U' => Some(RemoteKeyCode::KeycodeU),
+        'v' | 'V' => Some(RemoteKeyCode::KeycodeV),
+        'w' | 'W' => Some(RemoteKeyCode::KeycodeW),
+        'x' | 'X' => Some(RemoteKeyCode::KeycodeX),
+        'y' | 'Y' => Some(RemoteKeyCode::KeycodeY),
+        'z' | 'Z' => Some(RemoteKeyCode::KeycodeZ),
+        '0' => Some(RemoteKeyCode::Keycode0),
+        '1' => Some(RemoteKeyCode::Keycode1),
+        '2' => Some(RemoteKeyCode::Keycode2),
+        '3' => Some(RemoteKeyCode::Keycode3),
+        '4' => Some(RemoteKeyCode::Keycode4),
+        '5' => Some(RemoteKeyCode::Keycode5),
+        '6' => Some(RemoteKeyCode::Keycode6),
+        '7' => Some(RemoteKeyCode::Keycode7),
+        '8' => Some(RemoteKeyCode::Keycode8),
+        '9' => Some(RemoteKeyCode::Keycode9),
+        ' ' => Some(RemoteKeyCode::KeycodeSpace),
+        ',' => Some(RemoteKeyCode::KeycodeComma),
+        '.' => Some(RemoteKeyCode::KeycodePeriod),
+        '-' | '_' => Some(RemoteKeyCode::KeycodeMinus),
+        '=' => Some(RemoteKeyCode::KeycodeEquals),
+        '+' => Some(RemoteKeyCode::KeycodePlus),
+        '/' => Some(RemoteKeyCode::KeycodeSlash),
+        '\\' => Some(RemoteKeyCode::KeycodeBackslash),
+        ';' | ':' => Some(RemoteKeyCode::KeycodeSemicolon),
+        '\'' | '"' => Some(RemoteKeyCode::KeycodeApostrophe),
+        '@' => Some(RemoteKeyCode::KeycodeAt),
+        '`' | '~' => Some(RemoteKeyCode::KeycodeGrave),
+        '[' | '{' => Some(RemoteKeyCode::KeycodeLeftBracket),
+        ']' | '}' => Some(RemoteKeyCode::KeycodeRightBracket),
+        '*' => Some(RemoteKeyCode::KeycodeStar),
+        '#' => Some(RemoteKeyCode::KeycodePound),
+        '\n' | '\r' => Some(RemoteKeyCode::KeycodeEnter),
+        '\x08' => Some(RemoteKeyCode::KeycodeDel),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_char_to_keycode() {
+        assert_eq!(char_to_keycode('a'), Some(RemoteKeyCode::KeycodeA));
+        assert_eq!(char_to_keycode('Z'), Some(RemoteKeyCode::KeycodeZ));
+        assert_eq!(char_to_keycode('5'), Some(RemoteKeyCode::Keycode5));
+        assert_eq!(char_to_keycode(' '), Some(RemoteKeyCode::KeycodeSpace));
+        assert_eq!(char_to_keycode('.'), Some(RemoteKeyCode::KeycodePeriod));
+        assert_eq!(char_to_keycode('\n'), Some(RemoteKeyCode::KeycodeEnter));
+        assert_eq!(char_to_keycode('?'), None);
+    }
+}

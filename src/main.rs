@@ -25,7 +25,7 @@ use tokio::sync::{mpsc, Mutex};
 
 use crate::app::state::{
     ActiveModal, ActiveTab, AddDeviceModalState, AppModalState, AppState, ConnectionStatus,
-    LaunchUrlModalState, LogLevel, MacroModalState, PairingModalState, RemoteButton,
+    LaunchUrlModalState, LogLevel, MacroModalState, PairingModalState, RemoteButton, TextInputMode,
 };
 use crate::config::{AppConfig, CustomApp, SavedMacro};
 use crate::net::client::{TvConnection, TvEvent};
@@ -76,6 +76,12 @@ enum Commands {
     Text {
         ip: String,
         text: String,
+        /// Transmission mode: smart (default), keys, or ime
+        #[arg(short, long, default_value = "smart")]
+        mode: String,
+        /// Press Enter on TV after sending text
+        #[arg(short, long)]
+        enter: bool,
     },
     /// List saved and paired devices
     List,
@@ -90,7 +96,7 @@ async fn main() -> Result<()> {
         Some(Commands::Pair { ip, client_name }) => run_cli_pair(&ip, &client_name).await,
         Some(Commands::Key { ip, keycode }) => run_cli_key(&ip, &keycode).await,
         Some(Commands::Launch { ip, app_link }) => run_cli_launch(&ip, &app_link).await,
-        Some(Commands::Text { ip, text }) => run_cli_text(&ip, &text).await,
+        Some(Commands::Text { ip, text, mode, enter }) => run_cli_text(&ip, &text, &mode, enter).await,
         Some(Commands::List) => run_cli_list().await,
         None => run_tui().await,
     }
@@ -192,7 +198,7 @@ async fn run_cli_launch(ip_str: &str, app_link: &str) -> Result<()> {
     Ok(())
 }
 
-async fn run_cli_text(ip_str: &str, text: &str) -> Result<()> {
+async fn run_cli_text(ip_str: &str, text: &str, mode: &str, enter: bool) -> Result<()> {
     let ip = ip_str.parse::<std::net::IpAddr>()?;
     let target = SocketAddr::new(ip, 6466);
     let cert_mgr = CertManager::new(&AppConfig::config_dir());
@@ -202,8 +208,25 @@ async fn run_cli_text(ip_str: &str, text: &str) -> Result<()> {
     let client = TvConnection::connect(target, cert, key, event_tx).await?;
 
     tokio::time::sleep(Duration::from_millis(500)).await;
-    client.send_text(text.to_string()).await?;
-    println!("Sent text '{}' to {}", text, ip_str);
+    match mode.to_lowercase().as_str() {
+        "keys" | "key" | "keystroke" | "keystrokes" => {
+            client.send_text_keys(text.to_string(), enter).await?;
+            println!("Sent keystroke text '{}' to {} (enter={})", text, ip_str, enter);
+        }
+        "ime" => {
+            client.send_text_ime(text.to_string()).await?;
+            println!("Sent IME text '{}' to {}", text, ip_str);
+        }
+        _ => {
+            if enter {
+                client.send_text_keys(text.to_string(), true).await?;
+                println!("Sent text '{}' + Enter to {}", text, ip_str);
+            } else {
+                client.send_text(text.to_string()).await?;
+                println!("Sent text '{}' to {}", text, ip_str);
+            }
+        }
+    }
     tokio::time::sleep(Duration::from_millis(300)).await;
     let _ = client.disconnect().await;
     Ok(())
@@ -363,6 +386,9 @@ async fn run_app_loop(
                     TvEvent::Disconnected(reason) => {
                         state.connection_status = ConnectionStatus::Disconnected;
                         state.client_handle = None;
+                        state.ime_active = false;
+                        state.ime_field_counter = 0;
+                        state.ime_field_label.clear();
                         state.log(LogLevel::Warning, format!("TV Disconnected: {}", reason));
                     }
                     TvEvent::PowerStateChanged(on) => {
@@ -377,6 +403,14 @@ async fn run_app_loop(
                     TvEvent::ActiveAppChanged(pkg) => {
                         state.current_app = pkg.clone();
                         state.log(LogLevel::Info, format!("Current Running App: {}", pkg));
+                    }
+                    TvEvent::ImeStateChanged { active, label, field_counter } => {
+                        state.ime_active = active;
+                        state.ime_field_label = label.clone();
+                        state.ime_field_counter = field_counter;
+                        if active && !label.is_empty() {
+                            state.log(LogLevel::Info, format!("TV Input Field Active: \"{}\"", label));
+                        }
                     }
                     TvEvent::ProtocolLog(msg) => {
                         state.log(LogLevel::Protocol, msg);
@@ -1068,6 +1102,13 @@ async fn handle_apps_keys(key: crossterm::event::KeyEvent, state: &mut AppState)
 
 async fn handle_text_input_keys(key: crossterm::event::KeyEvent, state: &mut AppState) -> Result<()> {
     match key.code {
+        KeyCode::Tab => {
+            state.text_input_mode = state.text_input_mode.next();
+            state.log(
+                LogLevel::Info,
+                format!("Switched text mode: {}", state.text_input_mode.label()),
+            );
+        }
         KeyCode::Up => {
             if state.selected_history_idx > 0 {
                 state.selected_history_idx -= 1;
@@ -1097,8 +1138,21 @@ async fn handle_text_input_keys(key: crossterm::event::KeyEvent, state: &mut App
             let text = state.text_input_buffer.trim().to_string();
             if !text.is_empty() {
                 if let Some(client) = &state.client_handle {
-                    let _ = client.send_text(text.clone()).await;
-                    state.log(LogLevel::Success, format!("Sent IME text to TV: \"{}\"", text));
+                    match state.text_input_mode {
+                        TextInputMode::Smart => {
+                            let _ = client.send_text(text.clone()).await;
+                        }
+                        TextInputMode::Keystroke => {
+                            let _ = client.send_text_keys(text.clone(), false).await;
+                        }
+                        TextInputMode::Ime => {
+                            let _ = client.send_text_ime(text.clone()).await;
+                        }
+                    }
+                    state.log(
+                        LogLevel::Success,
+                        format!("Sent text [{}] to TV: \"{}\"", state.text_input_mode.label(), text),
+                    );
                     if !state.text_input_history.contains(&text) {
                         state.text_input_history.insert(0, text.clone());
                     }
@@ -1179,6 +1233,10 @@ async fn handle_macros_keys(key: crossterm::event::KeyEvent, state: &mut AppStat
                                 let _ = client.launch_app(step.action[4..].to_string()).await;
                             } else if step.action.starts_with("text:") {
                                 let _ = client.send_text(step.action[5..].to_string()).await;
+                            } else if step.action.starts_with("keys:") {
+                                let _ = client.send_text_keys(step.action[5..].to_string(), false).await;
+                            } else if step.action.starts_with("ime:") {
+                                let _ = client.send_text_ime(step.action[4..].to_string()).await;
                             }
                         }
                     });

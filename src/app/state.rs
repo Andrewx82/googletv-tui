@@ -52,6 +52,32 @@ impl ActiveTab {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TextInputMode {
+    #[default]
+    Smart,
+    Keystroke,
+    Ime,
+}
+
+impl TextInputMode {
+    pub fn next(&self) -> Self {
+        match self {
+            Self::Smart => Self::Keystroke,
+            Self::Keystroke => Self::Ime,
+            Self::Ime => Self::Smart,
+        }
+    }
+
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Smart => "Smart (Auto IME / Keys)",
+            Self::Keystroke => "Keystrokes (YouTube/Netflix)",
+            Self::Ime => "IME Batch (System/Gboard)",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ConnectionStatus {
     Disconnected,
@@ -308,6 +334,10 @@ pub struct AppState {
     pub text_input_buffer: String,
     pub text_input_history: Vec<String>,
     pub selected_history_idx: usize,
+    pub text_input_mode: TextInputMode,
+    pub ime_active: bool,
+    pub ime_field_label: String,
+    pub ime_field_counter: i32,
 
     // Macros View
     pub selected_macro_idx: usize,
@@ -355,6 +385,10 @@ impl AppState {
                 "Lo-fi hip hop radio".into(),
             ],
             selected_history_idx: 0,
+            text_input_mode: TextInputMode::Smart,
+            ime_active: false,
+            ime_field_label: String::new(),
+            ime_field_counter: 0,
 
             selected_macro_idx: 0,
             running_macro: None,

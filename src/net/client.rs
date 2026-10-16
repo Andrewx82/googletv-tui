@@ -10,6 +10,7 @@ use tokio::sync::mpsc;
 use tokio_openssl::SslStream;
 
 use crate::net::framing::{read_delimited_message, write_delimited_message};
+use crate::proto::char_to_keycode;
 use crate::proto::remote::{
     RemoteAppLinkLaunchRequest, RemoteConfigure, RemoteDeviceInfo, RemoteDirection,
     RemoteEditInfo, RemoteImeBatchEdit, RemoteImeObject, RemoteKeyCode, RemoteKeyInject,
@@ -50,6 +51,11 @@ pub enum TvEvent {
         muted: bool,
     },
     ActiveAppChanged(String),
+    ImeStateChanged {
+        active: bool,
+        label: String,
+        field_counter: i32,
+    },
     ProtocolLog(String),
 }
 
@@ -60,6 +66,11 @@ pub enum TvCommand {
         direction: RemoteDirection,
     },
     Text(String),
+    TextIme(String),
+    TextKeys {
+        text: String,
+        press_enter: bool,
+    },
     LaunchApp(String),
     Disconnect,
 }
@@ -77,9 +88,26 @@ impl TvClientHandle {
             .context("Client task closed")
     }
 
+    /// Smart text send: uses IME if active input field reported by TV, else sends Keystrokes
     pub async fn send_text(&self, text: String) -> Result<()> {
         self.cmd_tx
             .send(TvCommand::Text(text))
+            .await
+            .context("Client task closed")
+    }
+
+    /// Force IME batch edit injection (best for system search / Gboard)
+    pub async fn send_text_ime(&self, text: String) -> Result<()> {
+        self.cmd_tx
+            .send(TvCommand::TextIme(text))
+            .await
+            .context("Client task closed")
+    }
+
+    /// Force hardware keycode injection (best for YouTube, Netflix, in-app keyboards)
+    pub async fn send_text_keys(&self, text: String, press_enter: bool) -> Result<()> {
+        self.cmd_tx
+            .send(TvCommand::TextKeys { text, press_enter })
             .await
             .context("Client task closed")
     }
@@ -165,14 +193,76 @@ impl TvConnection {
                                 }
                             }
                             Some(TvCommand::Text(text)) => {
-                                let len = (text.chars().count().saturating_sub(1)) as i32;
+                                // Smart dispatch:
+                                // If field_counter > 0, Android TV has an active text field -> send IME batch edit!
+                                // If field_counter == 0, app does not use system IME (e.g. YouTube/Netflix custom keyboard) -> send as Keystrokes!
+                                if field_counter > 0 {
+                                    let len = text.chars().count() as i32;
+                                    let ime_obj = RemoteImeObject {
+                                        start: (len - 1).max(0),
+                                        end: (len - 1).max(0),
+                                        value: text.clone(),
+                                    };
+                                    let edit = RemoteEditInfo {
+                                        insert: 0,
+                                        text_field_status: Some(ime_obj),
+                                    };
+                                    let batch = RemoteImeBatchEdit {
+                                        ime_counter,
+                                        field_counter,
+                                        edit_info: vec![edit],
+                                    };
+                                    let mut msg = RemoteMessage::default();
+                                    msg.remote_ime_batch_edit = Some(batch);
+                                    let _ = event_tx
+                                        .send(TvEvent::ProtocolLog(format!(
+                                            "TX Smart IME text: '{}' (ime_counter={}, field_counter={})",
+                                            text, ime_counter, field_counter
+                                        )))
+                                        .await;
+                                    ime_counter += 1;
+                                    if let Err(e) = write_delimited_message(&mut stream, &msg).await {
+                                        let _ = event_tx.send(TvEvent::Disconnected(format!("Write error: {}", e))).await;
+                                        break;
+                                    }
+                                } else {
+                                    let _ = event_tx
+                                        .send(TvEvent::ProtocolLog(format!(
+                                            "TX Smart Keystrokes (field_counter=0): '{}' ({} chars)",
+                                            text,
+                                            text.len()
+                                        )))
+                                        .await;
+                                    let mut write_err = false;
+                                    for ch in text.chars() {
+                                        if let Some(code) = char_to_keycode(ch) {
+                                            let mut msg = RemoteMessage::default();
+                                            msg.remote_key_inject = Some(RemoteKeyInject {
+                                                key_code: code as i32,
+                                                direction: RemoteDirection::Short as i32,
+                                            });
+                                            if let Err(e) = write_delimited_message(&mut stream, &msg).await {
+                                                let _ = event_tx.send(TvEvent::Disconnected(format!("Write error: {}", e))).await;
+                                                write_err = true;
+                                                break;
+                                            }
+                                            tokio::time::sleep(Duration::from_millis(30)).await;
+                                        }
+                                    }
+                                    if write_err {
+                                        break;
+                                    }
+                                }
+                            }
+                            Some(TvCommand::TextIme(text)) => {
+                                let len = text.chars().count() as i32;
                                 let ime_obj = RemoteImeObject {
-                                    start: len,
-                                    end: len,
+                                    start: (len - 1).max(0),
+                                    end: (len - 1).max(0),
                                     value: text.clone(),
                                 };
                                 let edit = RemoteEditInfo {
-                                    insert: 1,
+                                    insert: 0,
                                     text_field_status: Some(ime_obj),
                                 };
                                 let batch = RemoteImeBatchEdit {
@@ -182,10 +272,55 @@ impl TvConnection {
                                 };
                                 let mut msg = RemoteMessage::default();
                                 msg.remote_ime_batch_edit = Some(batch);
-                                let _ = event_tx.send(TvEvent::ProtocolLog(format!("TX IME text: '{}'", text))).await;
+                                let _ = event_tx
+                                    .send(TvEvent::ProtocolLog(format!(
+                                        "TX Force IME text: '{}' (ime_counter={}, field_counter={})",
+                                        text, ime_counter, field_counter
+                                    )))
+                                    .await;
+                                ime_counter += 1;
                                 if let Err(e) = write_delimited_message(&mut stream, &msg).await {
                                     let _ = event_tx.send(TvEvent::Disconnected(format!("Write error: {}", e))).await;
                                     break;
+                                }
+                            }
+                            Some(TvCommand::TextKeys { text, press_enter }) => {
+                                let _ = event_tx
+                                    .send(TvEvent::ProtocolLog(format!(
+                                        "TX Force Keystrokes: '{}' (enter={})",
+                                        text, press_enter
+                                    )))
+                                    .await;
+                                let mut write_err = false;
+                                for ch in text.chars() {
+                                    if let Some(code) = char_to_keycode(ch) {
+                                        let mut msg = RemoteMessage::default();
+                                        msg.remote_key_inject = Some(RemoteKeyInject {
+                                            key_code: code as i32,
+                                            direction: RemoteDirection::Short as i32,
+                                        });
+                                        if let Err(e) = write_delimited_message(&mut stream, &msg).await {
+                                            let _ = event_tx.send(TvEvent::Disconnected(format!("Write error: {}", e))).await;
+                                            write_err = true;
+                                            break;
+                                        }
+                                        tokio::time::sleep(Duration::from_millis(30)).await;
+                                    }
+                                }
+                                if write_err {
+                                    break;
+                                }
+                                if press_enter {
+                                    tokio::time::sleep(Duration::from_millis(50)).await;
+                                    let mut msg = RemoteMessage::default();
+                                    msg.remote_key_inject = Some(RemoteKeyInject {
+                                        key_code: RemoteKeyCode::KeycodeEnter as i32,
+                                        direction: RemoteDirection::Short as i32,
+                                    });
+                                    if let Err(e) = write_delimited_message(&mut stream, &msg).await {
+                                        let _ = event_tx.send(TvEvent::Disconnected(format!("Write error: {}", e))).await;
+                                        break;
+                                    }
                                 }
                             }
                             Some(TvCommand::LaunchApp(app_link)) => {
@@ -221,8 +356,9 @@ impl TvConnection {
                                         break;
                                     }
                                 }
+
                                 // 2. Configuration Handshake
-                                else if let Some(cfg) = msg.remote_configure {
+                                if let Some(cfg) = msg.remote_configure {
                                     if let Some(dev) = cfg.device_info {
                                         device_info = DeviceDetails {
                                             vendor: dev.vendor,
@@ -254,8 +390,9 @@ impl TvConnection {
                                         break;
                                     }
                                 }
+
                                 // 3. Set Active
-                                else if msg.remote_set_active.is_some() {
+                                if msg.remote_set_active.is_some() {
                                     let mut reply = RemoteMessage::default();
                                     reply.remote_set_active = Some(RemoteSetActive {
                                         active: ACTIVE_FEATURES,
@@ -266,13 +403,15 @@ impl TvConnection {
                                         break;
                                     }
                                 }
+
                                 // 4. Power Status
-                                else if let Some(start) = msg.remote_start {
+                                if let Some(start) = msg.remote_start {
                                     let _ = event_tx.send(TvEvent::PowerStateChanged(start.started)).await;
                                     let _ = event_tx.send(TvEvent::ProtocolLog(format!("RX Power State: {}", if start.started { "ON" } else { "OFF/STANDBY" }))).await;
                                 }
+
                                 // 5. Volume Status
-                                else if let Some(vol) = msg.remote_set_volume_level {
+                                if let Some(vol) = msg.remote_set_volume_level {
                                     let _ = event_tx.send(TvEvent::VolumeChanged {
                                         level: vol.volume_level,
                                         max: vol.volume_max,
@@ -280,20 +419,55 @@ impl TvConnection {
                                     }).await;
                                     let _ = event_tx.send(TvEvent::ProtocolLog(format!("RX Volume: {}/{} (Muted: {})", vol.volume_level, vol.volume_max, vol.volume_muted))).await;
                                 }
-                                // 6. Active App Status
-                                else if let Some(ime) = msg.remote_ime_key_inject {
+
+                                // 6. Remote IME Show Request (TV opened a text field)
+                                if let Some(req) = msg.remote_ime_show_request {
+                                    if let Some(status) = req.remote_text_field_status {
+                                        field_counter = status.counter_field;
+                                        let _ = event_tx.send(TvEvent::ImeStateChanged {
+                                            active: field_counter > 0,
+                                            label: status.label.clone(),
+                                            field_counter,
+                                        }).await;
+                                        let _ = event_tx.send(TvEvent::ProtocolLog(format!(
+                                            "RX RemoteImeShowRequest: field_counter={}, label='{}', value='{}'",
+                                            field_counter, status.label, status.value
+                                        ))).await;
+                                    }
+                                }
+
+                                // 7. Active App and Text Field Status
+                                if let Some(ime) = msg.remote_ime_key_inject {
+                                    if let Some(status) = ime.text_field_status {
+                                        field_counter = status.counter_field;
+                                        let _ = event_tx.send(TvEvent::ImeStateChanged {
+                                            active: field_counter > 0,
+                                            label: status.label.clone(),
+                                            field_counter,
+                                        }).await;
+                                        let _ = event_tx.send(TvEvent::ProtocolLog(format!(
+                                            "RX RemoteImeKeyInject text_field_status: field_counter={}, label='{}'",
+                                            field_counter, status.label
+                                        ))).await;
+                                    }
                                     if let Some(app) = ime.app_info {
                                         let _ = event_tx.send(TvEvent::ActiveAppChanged(app.app_package.clone())).await;
                                         let _ = event_tx.send(TvEvent::ProtocolLog(format!("RX Active App: {}", app.app_package))).await;
                                     }
                                 }
-                                // 7. IME Batch Counters
-                                else if let Some(ime) = msg.remote_ime_batch_edit {
+
+                                // 8. IME Batch Counters
+                                if let Some(ime) = msg.remote_ime_batch_edit {
                                     ime_counter = ime.ime_counter;
                                     field_counter = ime.field_counter;
+                                    let _ = event_tx.send(TvEvent::ProtocolLog(format!(
+                                        "RX RemoteImeBatchEdit: ime_counter={}, field_counter={}",
+                                        ime_counter, field_counter
+                                    ))).await;
                                 }
-                                // 8. Remote Error
-                                else if let Some(err) = msg.remote_error {
+
+                                // 9. Remote Error
+                                if let Some(err) = msg.remote_error {
                                     let _ = event_tx.send(TvEvent::ProtocolLog(format!("RX Error from TV: value={}", err.value))).await;
                                 }
                             }
