@@ -24,10 +24,10 @@ use std::time::Duration;
 use tokio::sync::{mpsc, Mutex};
 
 use crate::app::state::{
-    ActiveModal, ActiveTab, AddDeviceModalState, AppState, ConnectionStatus, LaunchUrlModalState,
-    LogLevel, PairingModalState, RemoteButton,
+    ActiveModal, ActiveTab, AddDeviceModalState, AppModalState, AppState, ConnectionStatus,
+    LaunchUrlModalState, LogLevel, MacroModalState, PairingModalState, RemoteButton,
 };
-use crate::config::AppConfig;
+use crate::config::{AppConfig, CustomApp, SavedMacro};
 use crate::net::client::{TvConnection, TvEvent};
 use crate::net::discovery::{DiscoveredDevice, DiscoveryManager};
 use crate::net::pairing::{PairingSession, PAIRING_PORT};
@@ -518,6 +518,165 @@ async fn handle_key_event(
             }
             return Ok(());
         }
+        ActiveModal::AppEditor(app_state) => {
+            let mut save_app = None;
+            match key.code {
+                KeyCode::Esc => {
+                    state.modal = ActiveModal::None;
+                    return Ok(());
+                }
+                KeyCode::Tab | KeyCode::Down => {
+                    app_state.active_field = (app_state.active_field + 1) % 5;
+                    return Ok(());
+                }
+                KeyCode::BackTab | KeyCode::Up => {
+                    app_state.active_field = (app_state.active_field + 4) % 5;
+                    return Ok(());
+                }
+                KeyCode::Char(' ') if app_state.active_field == 4 => {
+                    app_state.is_quick_app = !app_state.is_quick_app;
+                    return Ok(());
+                }
+                KeyCode::Backspace => {
+                    match app_state.active_field {
+                        0 => { app_state.name_input.pop(); }
+                        1 => { app_state.link_input.pop(); }
+                        2 => { app_state.category_input.pop(); }
+                        3 => { app_state.hotkey_input.pop(); }
+                        _ => {}
+                    }
+                    return Ok(());
+                }
+                KeyCode::Char(c) => {
+                    match app_state.active_field {
+                        0 => app_state.name_input.push(c),
+                        1 => app_state.link_input.push(c),
+                        2 => app_state.category_input.push(c),
+                        3 => {
+                            if c.is_alphanumeric() {
+                                app_state.hotkey_input = c.to_lowercase().to_string();
+                            }
+                        }
+                        4 => {
+                            if c == ' ' {
+                                app_state.is_quick_app = !app_state.is_quick_app;
+                            }
+                        }
+                        _ => {}
+                    }
+                    return Ok(());
+                }
+                KeyCode::Enter => {
+                    let name = app_state.name_input.trim().to_string();
+                    let link = app_state.link_input.trim().to_string();
+                    if name.is_empty() || link.is_empty() {
+                        app_state.error = Some("App name and Link/URI are required".to_string());
+                        return Ok(());
+                    }
+                    let category = if app_state.category_input.trim().is_empty() {
+                        "Custom".to_string()
+                    } else {
+                        app_state.category_input.trim().to_string()
+                    };
+                    let hotkey = app_state.hotkey_input.trim().chars().next();
+                    let new_app = CustomApp {
+                        name,
+                        link,
+                        category,
+                        hotkey,
+                        is_quick_app: app_state.is_quick_app,
+                    };
+                    save_app = Some((app_state.is_editing, app_state.editing_index, new_app));
+                }
+                _ => return Ok(()),
+            }
+
+            if let Some((is_editing, editing_index, app)) = save_app {
+                let app_name = app.name.clone();
+                if is_editing {
+                    if let Some(idx) = editing_index {
+                        let _ = state.config.update_app(idx, app);
+                        state.log(LogLevel::Success, format!("Updated app: {}", app_name));
+                    }
+                } else {
+                    let _ = state.config.add_app(app);
+                    state.log(LogLevel::Success, format!("Added app: {}", app_name));
+                }
+                state.modal = ActiveModal::None;
+            }
+            return Ok(());
+        }
+        ActiveModal::MacroEditor(macro_state) => {
+            let mut save_macro = None;
+            match key.code {
+                KeyCode::Esc => {
+                    state.modal = ActiveModal::None;
+                    return Ok(());
+                }
+                KeyCode::Tab | KeyCode::Down => {
+                    macro_state.active_field = (macro_state.active_field + 1) % 3;
+                    return Ok(());
+                }
+                KeyCode::BackTab | KeyCode::Up => {
+                    macro_state.active_field = (macro_state.active_field + 2) % 3;
+                    return Ok(());
+                }
+                KeyCode::Backspace => {
+                    match macro_state.active_field {
+                        0 => { macro_state.name_input.pop(); }
+                        1 => { macro_state.description_input.pop(); }
+                        2 => { macro_state.steps_input.pop(); }
+                        _ => {}
+                    }
+                    return Ok(());
+                }
+                KeyCode::Char(c) => {
+                    match macro_state.active_field {
+                        0 => macro_state.name_input.push(c),
+                        1 => macro_state.description_input.push(c),
+                        2 => macro_state.steps_input.push(c),
+                        _ => {}
+                    }
+                    return Ok(());
+                }
+                KeyCode::Enter => {
+                    let name = macro_state.name_input.trim().to_string();
+                    let steps_str = macro_state.steps_input.trim().to_string();
+                    if name.is_empty() {
+                        macro_state.error = Some("Macro name is required".to_string());
+                        return Ok(());
+                    }
+                    if steps_str.is_empty() {
+                        macro_state.error = Some("Steps sequence is required".to_string());
+                        return Ok(());
+                    }
+                    let steps = AppConfig::parse_macro_steps(&steps_str);
+                    let description = macro_state.description_input.trim().to_string();
+                    let new_macro = SavedMacro {
+                        name,
+                        description,
+                        steps,
+                    };
+                    save_macro = Some((macro_state.is_editing, macro_state.editing_index, new_macro));
+                }
+                _ => return Ok(()),
+            }
+
+            if let Some((is_editing, editing_index, m)) = save_macro {
+                let macro_name = m.name.clone();
+                if is_editing {
+                    if let Some(idx) = editing_index {
+                        let _ = state.config.update_macro(idx, m);
+                        state.log(LogLevel::Success, format!("Updated macro: {}", macro_name));
+                    }
+                } else {
+                    let _ = state.config.add_macro(m);
+                    state.log(LogLevel::Success, format!("Added macro: {}", macro_name));
+                }
+                state.modal = ActiveModal::None;
+            }
+            return Ok(());
+        }
         ActiveModal::None => {}
     }
 
@@ -604,29 +763,20 @@ async fn handle_remote_keys(
         KeyCode::Char('/') => send_remote_key(state, RemoteKeyCode::KeycodeSearch).await,
         KeyCode::Char('i') => send_remote_key(state, RemoteKeyCode::KeycodeTvInput).await,
         KeyCode::Char('s') => send_remote_key(state, RemoteKeyCode::KeycodeSettings).await,
-        // App Hotkeys
-        KeyCode::Char('y') => {
-            if let Some(client) = &state.client_handle {
-                let _ = client.launch_app("https://www.youtube.com".into()).await;
-                state.log(LogLevel::Success, "Launched YouTube");
-            }
-        }
-        KeyCode::Char('n') => {
-            if let Some(client) = &state.client_handle {
-                let _ = client.launch_app("netflix://".into()).await;
-                state.log(LogLevel::Success, "Launched Netflix");
-            }
-        }
-        KeyCode::Char('r') => {
-            if let Some(client) = &state.client_handle {
-                let _ = client.launch_app("https://app.primevideo.com".into()).await;
-                state.log(LogLevel::Success, "Launched Prime Video");
-            }
-        }
-        KeyCode::Char('d') => {
-            if let Some(client) = &state.client_handle {
-                let _ = client.launch_app("https://www.disneyplus.com".into()).await;
-                state.log(LogLevel::Success, "Launched Disney+");
+        // Dynamic Quick App Hotkeys
+        KeyCode::Char(c) => {
+            let matched_app = state
+                .config
+                .custom_apps
+                .iter()
+                .find(|a| a.is_quick_app && a.hotkey == Some(c.to_ascii_lowercase()))
+                .map(|a| (a.name.clone(), a.link.clone()));
+
+            if let Some((name, link)) = matched_app {
+                if let Some(client) = &state.client_handle {
+                    let _ = client.launch_app(link).await;
+                    state.log(LogLevel::Success, format!("Launched {}", name));
+                }
             }
         }
         KeyCode::Tab => {
@@ -787,6 +937,86 @@ async fn handle_apps_keys(key: crossterm::event::KeyEvent, state: &mut AppState)
         KeyCode::Char('u') if state.apps_search.is_empty() => {
             state.modal = ActiveModal::LaunchUrl(LaunchUrlModalState::default());
         }
+        KeyCode::Char('a') if state.apps_search.is_empty() => {
+            state.modal = ActiveModal::AppEditor(AppModalState {
+                is_editing: false,
+                editing_index: None,
+                name_input: String::new(),
+                link_input: String::new(),
+                category_input: "Video".to_string(),
+                hotkey_input: String::new(),
+                is_quick_app: true,
+                active_field: 0,
+                error: None,
+            });
+        }
+        KeyCode::Char('e') if state.apps_search.is_empty() => {
+            let filtered = state.filtered_apps();
+            if let Some(app) = filtered.get(state.selected_app_idx) {
+                let real_idx = state.config.custom_apps.iter().position(|a| a.name == app.name && a.link == app.link);
+                if let Some(idx) = real_idx {
+                    let app = &state.config.custom_apps[idx];
+                    state.modal = ActiveModal::AppEditor(AppModalState {
+                        is_editing: true,
+                        editing_index: Some(idx),
+                        name_input: app.name.clone(),
+                        link_input: app.link.clone(),
+                        category_input: app.category.clone(),
+                        hotkey_input: app.hotkey.map(|c| c.to_string()).unwrap_or_default(),
+                        is_quick_app: app.is_quick_app,
+                        active_field: 0,
+                        error: None,
+                    });
+                }
+            }
+        }
+        KeyCode::Char('d') if state.apps_search.is_empty() => {
+            let filtered = state.filtered_apps();
+            if let Some(app) = filtered.get(state.selected_app_idx) {
+                let real_idx = state.config.custom_apps.iter().position(|a| a.name == app.name && a.link == app.link);
+                if let Some(idx) = real_idx {
+                    let name = state.config.custom_apps[idx].name.clone();
+                    let _ = state.config.delete_app(idx);
+                    state.log(LogLevel::Warning, format!("Deleted app: {}", name));
+                    if state.selected_app_idx >= state.filtered_apps().len() && state.selected_app_idx > 0 {
+                        state.selected_app_idx -= 1;
+                    }
+                }
+            }
+        }
+        KeyCode::Delete => {
+            let filtered = state.filtered_apps();
+            if let Some(app) = filtered.get(state.selected_app_idx) {
+                let real_idx = state.config.custom_apps.iter().position(|a| a.name == app.name && a.link == app.link);
+                if let Some(idx) = real_idx {
+                    let name = state.config.custom_apps[idx].name.clone();
+                    let _ = state.config.delete_app(idx);
+                    state.log(LogLevel::Warning, format!("Deleted app: {}", name));
+                    if state.selected_app_idx >= state.filtered_apps().len() && state.selected_app_idx > 0 {
+                        state.selected_app_idx -= 1;
+                    }
+                }
+            }
+        }
+        KeyCode::Char(' ') if state.apps_search.is_empty() => {
+            let filtered = state.filtered_apps();
+            if let Some(app) = filtered.get(state.selected_app_idx) {
+                let real_idx = state.config.custom_apps.iter().position(|a| a.name == app.name && a.link == app.link);
+                if let Some(idx) = real_idx {
+                    let _ = state.config.toggle_quick_app(idx);
+                    let is_quick = state.config.custom_apps[idx].is_quick_app;
+                    let name = &state.config.custom_apps[idx].name;
+                    state.log(
+                        LogLevel::Info,
+                        format!(
+                            "{} {} remote quick launch",
+                            if is_quick { "Added" } else { "Removed" },
+                            name
+                        ),
+                    );
+                }
+            }
+        }
         KeyCode::Char(c) => {
             state.apps_search.push(c);
             state.selected_app_idx = 0;
@@ -864,6 +1094,40 @@ async fn handle_macros_keys(key: crossterm::event::KeyEvent, state: &mut AppStat
         KeyCode::Down | KeyCode::Char('j') => {
             if state.selected_macro_idx + 1 < state.config.macros.len() {
                 state.selected_macro_idx += 1;
+            }
+        }
+        KeyCode::Char('a') => {
+            state.modal = ActiveModal::MacroEditor(MacroModalState {
+                is_editing: false,
+                editing_index: None,
+                name_input: String::new(),
+                description_input: String::new(),
+                steps_input: String::new(),
+                active_field: 0,
+                error: None,
+            });
+        }
+        KeyCode::Char('e') => {
+            if let Some(m) = state.config.macros.get(state.selected_macro_idx) {
+                state.modal = ActiveModal::MacroEditor(MacroModalState {
+                    is_editing: true,
+                    editing_index: Some(state.selected_macro_idx),
+                    name_input: m.name.clone(),
+                    description_input: m.description.clone(),
+                    steps_input: AppConfig::format_macro_steps(&m.steps),
+                    active_field: 0,
+                    error: None,
+                });
+            }
+        }
+        KeyCode::Char('d') | KeyCode::Delete => {
+            if !state.config.macros.is_empty() && state.selected_macro_idx < state.config.macros.len() {
+                let name = state.config.macros[state.selected_macro_idx].name.clone();
+                let _ = state.config.delete_macro(state.selected_macro_idx);
+                state.log(LogLevel::Warning, format!("Deleted macro: {}", name));
+                if state.selected_macro_idx >= state.config.macros.len() && state.selected_macro_idx > 0 {
+                    state.selected_macro_idx -= 1;
+                }
             }
         }
         KeyCode::Enter => {

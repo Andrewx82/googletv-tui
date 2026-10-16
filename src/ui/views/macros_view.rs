@@ -136,7 +136,13 @@ pub fn render(frame: &mut Frame, state: &AppState, area: Rect) {
 
     let hints = Line::from(vec![
         Span::styled("  [Enter] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
-        Span::raw("Run Macro Sequence   "),
+        Span::raw("Run Macro   "),
+        Span::styled("[a] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
+        Span::raw("Add Macro   "),
+        Span::styled("[e] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
+        Span::raw("Edit Macro   "),
+        Span::styled("[d] ", Style::default().fg(Theme::GOOGLE_RED).add_modifier(Modifier::BOLD)),
+        Span::raw("Delete Macro   "),
         Span::styled("[↑/↓] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
         Span::raw("Select Macro"),
     ]);

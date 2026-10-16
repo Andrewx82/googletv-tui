@@ -6,7 +6,9 @@ use ratatui::widgets::{Block, BorderType, Borders, Paragraph, Tabs};
 use ratatui::Frame;
 
 use crate::app::state::{ActiveModal, ActiveTab, AppState, ConnectionStatus};
-use crate::ui::modals::{add_device_modal, help_modal, launch_url_modal, pairing_modal};
+use crate::ui::modals::{
+    add_device_modal, app_modal, help_modal, launch_url_modal, macro_modal, pairing_modal,
+};
 use crate::ui::theme::Theme;
 use crate::ui::views::{
     apps_view, devices_view, logs_view, macros_view, remote_view, text_input_view,
@@ -142,6 +144,12 @@ fn render_modals(frame: &mut Frame, state: &AppState, area: Rect) {
         }
         ActiveModal::LaunchUrl(launch_url_state) => {
             launch_url_modal::render(frame, launch_url_state, area)
+        }
+        ActiveModal::AppEditor(app_state) => {
+            app_modal::render(frame, app_state, area)
+        }
+        ActiveModal::MacroEditor(macro_state) => {
+            macro_modal::render(frame, macro_state, area)
         }
     }
 }

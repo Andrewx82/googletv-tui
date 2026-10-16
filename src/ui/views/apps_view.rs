@@ -89,9 +89,19 @@ pub fn render(frame: &mut Frame, state: &AppState, area: Rect) {
                     Span::raw("     ")
                 };
 
+                let quick_span = if app.is_quick_app {
+                    Span::styled(
+                        " [★ Quick] ",
+                        Style::default().fg(Theme::GOOGLE_GREEN).add_modifier(Modifier::BOLD),
+                    )
+                } else {
+                    Span::styled(" [       ] ", Style::default().fg(Theme::TEXT_MUTED))
+                };
+
                 ListItem::new(vec![
                     Line::from(vec![
                         hotkey_span,
+                        quick_span,
                         Span::styled(format!(" {:<18} ", app.name), style),
                         Span::styled(
                             format!(" {:<10} ", app.category),
@@ -116,13 +126,17 @@ pub fn render(frame: &mut Frame, state: &AppState, area: Rect) {
 
     let hints = Line::from(vec![
         Span::styled("  [Enter] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
-        Span::raw("Launch Selected App   "),
+        Span::raw("Launch   "),
+        Span::styled("[a] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
+        Span::raw("Add App   "),
+        Span::styled("[e] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
+        Span::raw("Edit App   "),
+        Span::styled("[d] ", Style::default().fg(Theme::GOOGLE_RED).add_modifier(Modifier::BOLD)),
+        Span::raw("Delete   "),
+        Span::styled("[Space] ", Style::default().fg(Theme::GOOGLE_GREEN).add_modifier(Modifier::BOLD)),
+        Span::raw("Toggle Quick Remote   "),
         Span::styled("[u] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
-        Span::raw("Launch Custom URL / Intent   "),
-        Span::styled("[↑/↓] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
-        Span::raw("Navigate List   "),
-        Span::styled("[Esc] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
-        Span::raw("Clear Search Filter"),
+        Span::raw("Custom URL"),
     ]);
 
     frame.render_widget(Paragraph::new(hints).block(footer_block), chunks[2]);

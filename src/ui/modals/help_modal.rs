@@ -7,7 +7,7 @@ use ratatui::Frame;
 use crate::ui::theme::Theme;
 
 pub fn render(frame: &mut Frame, area: Rect) {
-    let popup_area = centered_rect(75, 75, area);
+    let popup_area = centered_rect(80, 85, area);
     frame.render_widget(Clear, popup_area);
 
     let block = Block::default()
@@ -88,8 +88,8 @@ pub fn render(frame: &mut Frame, area: Rect) {
             Span::raw("i: Input Source | s: Settings"),
         ]),
         Line::from(vec![
-            Span::styled("  y, n, r, d          ", Style::default().fg(Theme::ACCENT_CYAN)),
-            Span::raw("Launch YouTube, Netflix, Prime Video, Disney+"),
+            Span::styled("  Quick App Hotkeys   ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Dynamic hotkeys (e.g. y=YouTube, n=Netflix, r=Prime, d=Disney+)"),
         ]),
         Line::from(vec![]),
         Line::from(vec![Span::styled(
@@ -111,6 +111,56 @@ pub fn render(frame: &mut Frame, area: Rect) {
         Line::from(vec![
             Span::styled("  a / d               ", Style::default().fg(Theme::ACCENT_CYAN)),
             Span::raw("a: Add manual IP | d: Delete/forget device"),
+        ]),
+        Line::from(vec![]),
+        Line::from(vec![Span::styled(
+            "Apps & Quick Launch (Tab 3)",
+            Style::default().fg(Theme::GOOGLE_BLUE).add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(vec![
+            Span::styled("  Enter               ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Launch selected app on TV"),
+        ]),
+        Line::from(vec![
+            Span::styled("  a                   ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Add custom app (Name, URI/Link, Category, Hotkey, Quick App)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  e                   ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Edit selected app configuration"),
+        ]),
+        Line::from(vec![
+            Span::styled("  d / Delete          ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Delete custom app from list"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Space               ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Toggle app on/off Remote Control Quick Apps Pad"),
+        ]),
+        Line::from(vec![
+            Span::styled("  u                   ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Quick launch custom URL or deep-link URI"),
+        ]),
+        Line::from(vec![]),
+        Line::from(vec![Span::styled(
+            "Macros & Automation (Tab 5)",
+            Style::default().fg(Theme::GOOGLE_GREEN).add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(vec![
+            Span::styled("  Enter               ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Execute selected automation macro sequence"),
+        ]),
+        Line::from(vec![
+            Span::styled("  a                   ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Add custom automation macro with steps"),
+        ]),
+        Line::from(vec![
+            Span::styled("  e                   ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Edit selected macro steps and properties"),
+        ]),
+        Line::from(vec![
+            Span::styled("  d / Delete          ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Delete macro from list"),
         ]),
         Line::from(vec![]),
         Line::from(vec![Span::styled(

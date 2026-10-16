@@ -23,17 +23,22 @@ Built on the **Android TV Remote Protocol v2** using mutual TLS (mTLS), Protocol
   - Automatically generates self-signed 2048-bit RSA keys and X.509 client certificates.
   - Implements the complete Polo pairing protocol with SHA256 certificate modulus & exponent cross-verification.
   - Beautiful centered 6-digit hex PIN dialog with automatic submission upon typing the 6th character.
-- **📱 App Launcher & Deep-Linking (Tab 3)**:
+- **📱 App Launcher & Customizable Quick Apps (Tab 3)**:
   - Built-in catalogue of popular streaming, audio, and utility apps (YouTube, Netflix, Prime Video, Disney+, Spotify, Plex, Kodi, VLC, SmartTube, Twitch).
+  - **Customizable Quick App Pad**: Toggle any app (`Space`) to appear directly on the Tab 1 virtual remote quick buttons.
+  - **Full App CRUD**: Add your own custom apps (`a`), edit existing apps (`e`), delete apps (`d` / `Delete`).
+  - **Custom Hotkeys**: Assign any single-character shortcut key to instantly launch custom apps from the Remote tab.
   - Live fuzzy search / filter bar.
   - Custom URL & Android Intent launcher modal (`u`) to trigger any web link, app package, or intent URI.
 - **⌨ TV Virtual Keyboard / IME (Tab 4)**:
   - Type directly on your computer keyboard to inject text into any active text field or search bar on the TV.
   - IME batch synchronization maintaining exact field counters.
   - Search history with instant re-send.
-- **⚡ Macro Sequences & Automation (Tab 5)**:
+- **⚡ Macro Sequences & Custom Automation (Tab 5)**:
   - Automated multi-step actions (e.g. *Movie Night*: Wake TV → Delay 2s → Launch Netflix; *Bedtime Sleep*: Go Home → Wait 1s → Sleep).
-  - Extensible via JSON configuration.
+  - **Full Macro Editor**: Add custom macros (`a`), edit existing macros (`e`), delete macros (`d` / `Delete`).
+  - Intuitive step syntax: `key:<KEYCODE>`, `wait:<ms>`, `app:<URI>`, `text:<QUERY>`.
+  - Persisted directly to `~/.config/googletv-tui/config.json`.
 - **📜 Live Protocol & Activity Inspector (Tab 6)**:
   - Real-time stream of incoming and outgoing Protobuf packets, ping-pong keepalive heartbeats, power state changes, and volume adjustments.
   - Color-coded severity badges with timestamps and scroll support.
@@ -214,10 +219,7 @@ sudo cp target/release/googletv-tui /usr/local/bin/
 | `/` | Assistant / Search | `KEYCODE_SEARCH` |
 | `i` | TV Input Source | `KEYCODE_TV_INPUT` |
 | `s` | Settings | `KEYCODE_SETTINGS` |
-| `y` | Quick Launch YouTube | App Link |
-| `n` | Quick Launch Netflix | App Link |
-| `r` | Quick Launch Prime Video | App Link |
-| `d` | Quick Launch Disney+ | App Link |
+| `[hotkey]` | Launch Quick App (e.g. `y`, `n`, `r`, `d`, or custom hotkey) | Configured App URI |
 
 ### Devices Tab (Tab 2)
 
@@ -228,6 +230,27 @@ sudo cp target/release/googletv-tui /usr/local/bin/
 | `p` | Pair device (opens 6-digit PIN dialog) |
 | `a` | Add manual IP address modal |
 | `d` / `Delete` | Remove / forget saved device |
+
+### Apps & Quick Launch Tab (Tab 3)
+
+| Key | Action |
+|---|---|
+| `Enter` | Launch selected app on TV |
+| `a` | Add custom app modal (Name, URI, Category, Hotkey, Quick App) |
+| `e` | Edit selected app modal |
+| `d` / `Delete` | Delete custom app |
+| `Space` | Toggle app on/off Remote Control Quick Apps Pad |
+| `u` | Launch direct URL or Android Intent URI dialog |
+| `Esc` | Clear search filter |
+
+### Automation Macros Tab (Tab 5)
+
+| Key | Action |
+|---|---|
+| `Enter` | Execute selected macro sequence on TV |
+| `a` | Add custom macro modal (Name, Description, Steps) |
+| `e` | Edit selected macro modal |
+| `d` / `Delete` | Delete custom macro |
 
 ---
 

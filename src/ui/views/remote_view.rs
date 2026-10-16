@@ -179,41 +179,70 @@ fn render_remote_body(frame: &mut Frame, state: &AppState, area: Rect) {
     ]);
     frame.render_widget(Paragraph::new(header_line), rows[9]);
 
-    // App Row 1: YouTube, Netflix
-    let yt_style = btn_style(RemoteButton::AppYouTube);
-    let nf_style = btn_style(RemoteButton::AppNetflix);
+    let quick_apps: Vec<_> = state
+        .config
+        .custom_apps
+        .iter()
+        .filter(|a| a.is_quick_app)
+        .take(6)
+        .collect();
 
-    let app_row1 = Line::from(vec![
-        Span::styled(" [ ▶ YouTube (y) ] ", yt_style),
-        Span::raw("   "),
-        Span::styled(" [ 🔴 Netflix (n) ] ", nf_style),
-    ]);
-    frame.render_widget(
-        Paragraph::new(app_row1).alignment(Alignment::Center),
-        rows[10],
-    );
+    for (row_idx, chunk_idx) in [10, 11, 12].iter().enumerate() {
+        let first_idx = row_idx * 2;
+        let second_idx = first_idx + 1;
 
-    // App Row 2: Prime, Disney+
-    let prime_style = btn_style(RemoteButton::AppPrime);
-    let disney_style = btn_style(RemoteButton::AppDisney);
+        let mut spans = Vec::new();
+        if let Some(app1) = quick_apps.get(first_idx) {
+            let hk_str = app1.hotkey.map(|c| format!(" ({})", c)).unwrap_or_default();
+            spans.push(Span::styled(
+                format!(" [ {} {}{} ] ", get_app_icon(&app1.category, &app1.name), app1.name, hk_str),
+                Style::default().fg(Theme::TEXT_PRIMARY).bg(Theme::SURFACE),
+            ));
+        }
 
-    let app_row2 = Line::from(vec![
-        Span::styled(" [ 🎬 Prime (r) ] ", prime_style),
-        Span::raw("    "),
-        Span::styled(" [ ✨ Disney+ (d) ] ", disney_style),
-    ]);
-    frame.render_widget(
-        Paragraph::new(app_row2).alignment(Alignment::Center),
-        rows[11],
-    );
+        if let Some(app2) = quick_apps.get(second_idx) {
+            let hk_str = app2.hotkey.map(|c| format!(" ({})", c)).unwrap_or_default();
+            spans.push(Span::raw("  "));
+            spans.push(Span::styled(
+                format!(" [ {} {}{} ] ", get_app_icon(&app2.category, &app2.name), app2.name, hk_str),
+                Style::default().fg(Theme::TEXT_PRIMARY).bg(Theme::SURFACE),
+            ));
+        }
 
-    // App Row 3: Spotify
-    let spot_style = btn_style(RemoteButton::AppSpotify);
-    let app_row3 = Line::from(vec![Span::styled(" [ 🎵 Spotify ] ", spot_style)]);
-    frame.render_widget(
-        Paragraph::new(app_row3).alignment(Alignment::Center),
-        rows[12],
-    );
+        if !spans.is_empty() {
+            frame.render_widget(
+                Paragraph::new(Line::from(spans)).alignment(Alignment::Center),
+                rows[*chunk_idx],
+            );
+        }
+    }
+}
+
+fn get_app_icon(category: &str, name: &str) -> &'static str {
+    let lower = name.to_lowercase();
+    if lower.contains("youtube") {
+        "▶"
+    } else if lower.contains("netflix") {
+        "🔴"
+    } else if lower.contains("prime") {
+        "🎬"
+    } else if lower.contains("disney") {
+        "✨"
+    } else if lower.contains("spotify") || lower.contains("music") {
+        "🎵"
+    } else if lower.contains("plex") || lower.contains("kodi") || lower.contains("vlc") {
+        "📺"
+    } else if lower.contains("twitch") {
+        "🟣"
+    } else {
+        match category {
+            "Video" => "▶",
+            "Music" => "🎵",
+            "Media" => "📺",
+            "Streaming" => "📡",
+            _ => "📱",
+        }
+    }
 }
 
 fn render_status_and_telemetry(frame: &mut Frame, state: &AppState, area: Rect) {
@@ -376,16 +405,25 @@ fn render_status_and_telemetry(frame: &mut Frame, state: &AppState, area: Rect) 
             Span::styled(" / ", Style::default().fg(Theme::ACCENT_CYAN)),
             Span::raw("Search/Assistant"),
         ]),
-        Line::from(vec![
-            Span::styled(" y ", Style::default().fg(Theme::GOOGLE_RED)),
-            Span::raw("YouTube  "),
-            Span::styled(" n ", Style::default().fg(Theme::GOOGLE_RED)),
-            Span::raw("Netflix  "),
-            Span::styled(" r ", Style::default().fg(Theme::GOOGLE_BLUE)),
-            Span::raw("Prime  "),
-            Span::styled(" d ", Style::default().fg(Theme::GOOGLE_BLUE)),
-            Span::raw("Disney+"),
-        ]),
+        Line::from({
+            let mut spans = Vec::new();
+            for app in state.config.custom_apps.iter().filter(|a| a.is_quick_app).take(5) {
+                if let Some(hk) = app.hotkey {
+                    spans.push(Span::styled(
+                        format!(" {} ", hk),
+                        Style::default().fg(Theme::GOOGLE_YELLOW).add_modifier(Modifier::BOLD),
+                    ));
+                    spans.push(Span::raw(format!("{}  ", app.name)));
+                }
+            }
+            if spans.is_empty() {
+                spans.push(Span::styled(
+                    "No quick app hotkeys configured (Customize in Tab 3)",
+                    Style::default().fg(Theme::TEXT_MUTED),
+                ));
+            }
+            spans
+        }),
     ];
 
     frame.render_widget(Paragraph::new(keys_lines).block(keys_block), chunks[1]);

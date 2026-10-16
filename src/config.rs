@@ -14,12 +14,18 @@ pub struct SavedDevice {
     pub model: Option<String>,
 }
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CustomApp {
     pub name: String,
     pub link: String,
     pub category: String,
     pub hotkey: Option<char>,
+    #[serde(default = "default_true")]
+    pub is_quick_app: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,60 +67,70 @@ pub fn default_apps() -> Vec<CustomApp> {
             link: "https://www.youtube.com".into(),
             category: "Video".into(),
             hotkey: Some('y'),
+            is_quick_app: true,
         },
         CustomApp {
             name: "Netflix".into(),
             link: "netflix://".into(),
             category: "Video".into(),
             hotkey: Some('n'),
+            is_quick_app: true,
         },
         CustomApp {
             name: "Prime Video".into(),
             link: "https://app.primevideo.com".into(),
             category: "Video".into(),
-            hotkey: Some('p'),
+            hotkey: Some('r'),
+            is_quick_app: true,
         },
         CustomApp {
             name: "Disney+".into(),
             link: "https://www.disneyplus.com".into(),
             category: "Video".into(),
             hotkey: Some('d'),
+            is_quick_app: true,
         },
         CustomApp {
             name: "Spotify".into(),
             link: "spotify://".into(),
             category: "Music".into(),
-            hotkey: Some('s'),
+            hotkey: Some('o'),
+            is_quick_app: true,
         },
         CustomApp {
             name: "Plex".into(),
             link: "plex://".into(),
             category: "Media".into(),
             hotkey: Some('x'),
+            is_quick_app: true,
         },
         CustomApp {
             name: "Twitch".into(),
             link: "twitch://".into(),
             category: "Streaming".into(),
             hotkey: Some('t'),
+            is_quick_app: false,
         },
         CustomApp {
             name: "SmartTube".into(),
             link: "smarttube://".into(),
             category: "Video".into(),
             hotkey: None,
+            is_quick_app: false,
         },
         CustomApp {
             name: "Kodi".into(),
             link: "kodi://".into(),
             category: "Media".into(),
-            hotkey: Some('k'),
+            hotkey: None,
+            is_quick_app: false,
         },
         CustomApp {
             name: "VLC".into(),
             link: "org.videolan.vlc://".into(),
             category: "Media".into(),
-            hotkey: Some('v'),
+            hotkey: None,
+            is_quick_app: false,
         },
     ]
 }
@@ -260,4 +276,125 @@ impl AppConfig {
         }
         let _ = self.save();
     }
+
+    pub fn add_app(&mut self, app: CustomApp) -> Result<()> {
+        self.custom_apps.push(app);
+        self.save()
+    }
+
+    pub fn update_app(&mut self, index: usize, app: CustomApp) -> Result<()> {
+        if index < self.custom_apps.len() {
+            self.custom_apps[index] = app;
+            self.save()?;
+        }
+        Ok(())
+    }
+
+    pub fn delete_app(&mut self, index: usize) -> Result<()> {
+        if index < self.custom_apps.len() {
+            self.custom_apps.remove(index);
+            self.save()?;
+        }
+        Ok(())
+    }
+
+    pub fn toggle_quick_app(&mut self, index: usize) -> Result<()> {
+        if let Some(app) = self.custom_apps.get_mut(index) {
+            app.is_quick_app = !app.is_quick_app;
+            self.save()?;
+        }
+        Ok(())
+    }
+
+    pub fn add_macro(&mut self, m: SavedMacro) -> Result<()> {
+        self.macros.push(m);
+        self.save()
+    }
+
+    pub fn update_macro(&mut self, index: usize, m: SavedMacro) -> Result<()> {
+        if index < self.macros.len() {
+            self.macros[index] = m;
+            self.save()?;
+        }
+        Ok(())
+    }
+
+    pub fn delete_macro(&mut self, index: usize) -> Result<()> {
+        if index < self.macros.len() {
+            self.macros.remove(index);
+            self.save()?;
+        }
+        Ok(())
+    }
+
+    pub fn parse_macro_steps(input: &str) -> Vec<MacroStep> {
+        input
+            .split([',', ';', '\n'])
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .map(|action| {
+                let desc = if let Some(key) = action.strip_prefix("key:") {
+                    format!("Key {}", key.trim())
+                } else if let Some(wait) = action.strip_prefix("wait:") {
+                    format!("Wait {}ms", wait.trim())
+                } else if let Some(app) = action.strip_prefix("app:") {
+                    format!("Launch {}", app.trim())
+                } else if let Some(text) = action.strip_prefix("text:") {
+                    format!("Type \"{}\"", text.trim())
+                } else {
+                    action.to_string()
+                };
+                MacroStep {
+                    action: action.to_string(),
+                    description: desc,
+                }
+            })
+            .collect()
+    }
+
+    pub fn format_macro_steps(steps: &[MacroStep]) -> String {
+        steps
+            .iter()
+            .map(|s| s.action.as_str())
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_and_format_macro_steps() {
+        let input = "key:KEYCODE_POWER, wait:1500, app:netflix://, text:Stranger Things";
+        let steps = AppConfig::parse_macro_steps(input);
+        assert_eq!(steps.len(), 4);
+        assert_eq!(steps[0].action, "key:KEYCODE_POWER");
+        assert_eq!(steps[0].description, "Key KEYCODE_POWER");
+        assert_eq!(steps[1].action, "wait:1500");
+        assert_eq!(steps[1].description, "Wait 1500ms");
+        assert_eq!(steps[2].action, "app:netflix://");
+        assert_eq!(steps[2].description, "Launch netflix://");
+        assert_eq!(steps[3].action, "text:Stranger Things");
+        assert_eq!(steps[3].description, "Type \"Stranger Things\"");
+
+        let formatted = AppConfig::format_macro_steps(&steps);
+        assert_eq!(formatted, "key:KEYCODE_POWER, wait:1500, app:netflix://, text:Stranger Things");
+    }
+
+    #[test]
+    fn test_custom_app_serde_default() {
+        let json = r#"{
+            "name": "SmartTube",
+            "link": "smarttube://",
+            "category": "Video"
+        }"#;
+        let app: CustomApp = serde_json::from_str(json).unwrap();
+        assert_eq!(app.name, "SmartTube");
+        assert_eq!(app.hotkey, None);
+        assert!(app.is_quick_app);
+    }
+}
+
+

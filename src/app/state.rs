@@ -115,12 +115,38 @@ pub struct LaunchUrlModalState {
     pub error: Option<String>,
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct AppModalState {
+    pub is_editing: bool,
+    pub editing_index: Option<usize>,
+    pub name_input: String,
+    pub link_input: String,
+    pub category_input: String,
+    pub hotkey_input: String,
+    pub is_quick_app: bool,
+    pub active_field: usize, // 0 = Name, 1 = Link, 2 = Category, 3 = Hotkey, 4 = QuickApp
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MacroModalState {
+    pub is_editing: bool,
+    pub editing_index: Option<usize>,
+    pub name_input: String,
+    pub description_input: String,
+    pub steps_input: String,
+    pub active_field: usize, // 0 = Name, 1 = Description, 2 = Steps
+    pub error: Option<String>,
+}
+
 pub enum ActiveModal {
     None,
     Help,
     Pairing(PairingModalState),
     AddDevice(AddDeviceModalState),
     LaunchUrl(LaunchUrlModalState),
+    AppEditor(AppModalState),
+    MacroEditor(MacroModalState),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
