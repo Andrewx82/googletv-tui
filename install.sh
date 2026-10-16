@@ -67,9 +67,9 @@ else
 fi
 
 # 3. Determine download URL (latest release)
-LATEST_TAG="$(curl -sSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "v0.2.1")"
+LATEST_TAG="$(curl -sSL "https://api.github.com/repos/${REPO}/releases/latest" 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' || echo "v0.2.2")"
 if [ -z "$LATEST_TAG" ]; then
-    LATEST_TAG="v0.2.1"
+    LATEST_TAG="v0.2.2"
 fi
 
 DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${LATEST_TAG}/${BINARY_NAME}-${TARGET_ARCH}"
