@@ -50,27 +50,37 @@ Built on the **Android TV Remote Protocol v2** using mutual TLS (mTLS), Protocol
 
 ---
 
-## 📥 Installation
+## ⚡ Quick Install
 
-Choose the installation method that fits your environment:
-
-### Option 1: One-Line Quick Install (Linux x86_64)
-
-Install the precompiled standalone binary directly to `~/.local/bin` (no root required) or `/usr/local/bin` (system-wide):
+The easiest way to install `googletv-tui` on any Linux machine (Ubuntu, Debian, Arch, Fedora, openSUSE, Alpine, etc.):
 
 ```bash
-# User install (~/.local/bin)
+curl -fsSL https://raw.githubusercontent.com/Andrewx82/googletv-tui/main/install.sh | sh
+```
+
+> **What this does:** Automatically detects your architecture, downloads the latest pre-compiled binary from GitHub Releases, installs it to `/usr/local/bin` (or `~/.local/bin` if non-root), and sets executable permissions.
+
+Once installed, simply launch:
+
+```bash
+googletv-tui
+```
+
+---
+
+## 📥 Alternative Installation Methods
+
+### Option 2: Direct Binary Download (Manual)
+
+If you prefer downloading the binary manually without running a script:
+
+```bash
+# Download binary directly to ~/.local/bin (no root needed)
 mkdir -p ~/.local/bin
 curl -sSL https://github.com/Andrewx82/googletv-tui/releases/latest/download/googletv-tui-linux-x86_64 -o ~/.local/bin/googletv-tui
 chmod +x ~/.local/bin/googletv-tui
 
-# Ensure ~/.local/bin is in your PATH (e.g. in ~/.bashrc or ~/.zshrc):
-export PATH="$HOME/.local/bin:$PATH"
-```
-
-Or install system-wide with `sudo`:
-
-```bash
+# Or system-wide:
 sudo curl -sSL https://github.com/Andrewx82/googletv-tui/releases/latest/download/googletv-tui-linux-x86_64 -o /usr/local/bin/googletv-tui
 sudo chmod +x /usr/local/bin/googletv-tui
 ```
