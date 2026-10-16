@@ -143,6 +143,35 @@ pub fn render(frame: &mut Frame, area: Rect) {
         ]),
         Line::from(vec![]),
         Line::from(vec![Span::styled(
+            "Text Input & TV Search (Tab 4)",
+            Style::default().fg(Theme::GOOGLE_YELLOW).add_modifier(Modifier::BOLD),
+        )]),
+        Line::from(vec![
+            Span::styled("  Enter / S-Enter     ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Enter: Send text | Shift+Enter: Send text + Submit (Enter)"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Ctrl+S              ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Trigger TV Search overlay, type query, and submit"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Tab                 ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Cycle input mode: Smart IME ➔ Keystrokes ➔ Force IME"),
+        ]),
+        Line::from(vec![
+            Span::styled("  ↑ / ↓               ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Navigate and select from search history"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Del / Ctrl+D        ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Delete selected search history query"),
+        ]),
+        Line::from(vec![
+            Span::styled("  Ctrl+X              ", Style::default().fg(Theme::ACCENT_CYAN)),
+            Span::raw("Clear all search history"),
+        ]),
+        Line::from(vec![]),
+        Line::from(vec![Span::styled(
             "Macros & Automation (Tab 5)",
             Style::default().fg(Theme::GOOGLE_GREEN).add_modifier(Modifier::BOLD),
         )]),

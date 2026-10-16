@@ -82,6 +82,9 @@ enum Commands {
         /// Press Enter on TV after sending text
         #[arg(short, long)]
         enter: bool,
+        /// Trigger TV global search overlay before sending text
+        #[arg(short, long)]
+        search: bool,
     },
     /// List saved and paired devices
     List,
@@ -96,7 +99,9 @@ async fn main() -> Result<()> {
         Some(Commands::Pair { ip, client_name }) => run_cli_pair(&ip, &client_name).await,
         Some(Commands::Key { ip, keycode }) => run_cli_key(&ip, &keycode).await,
         Some(Commands::Launch { ip, app_link }) => run_cli_launch(&ip, &app_link).await,
-        Some(Commands::Text { ip, text, mode, enter }) => run_cli_text(&ip, &text, &mode, enter).await,
+        Some(Commands::Text { ip, text, mode, enter, search }) => {
+            run_cli_text(&ip, &text, &mode, enter, search).await
+        }
         Some(Commands::List) => run_cli_list().await,
         None => run_tui().await,
     }
@@ -198,7 +203,7 @@ async fn run_cli_launch(ip_str: &str, app_link: &str) -> Result<()> {
     Ok(())
 }
 
-async fn run_cli_text(ip_str: &str, text: &str, mode: &str, enter: bool) -> Result<()> {
+async fn run_cli_text(ip_str: &str, text: &str, mode: &str, enter: bool, search: bool) -> Result<()> {
     let ip = ip_str.parse::<std::net::IpAddr>()?;
     let target = SocketAddr::new(ip, 6466);
     let cert_mgr = CertManager::new(&AppConfig::config_dir());
@@ -208,26 +213,31 @@ async fn run_cli_text(ip_str: &str, text: &str, mode: &str, enter: bool) -> Resu
     let client = TvConnection::connect(target, cert, key, event_tx).await?;
 
     tokio::time::sleep(Duration::from_millis(500)).await;
-    match mode.to_lowercase().as_str() {
-        "keys" | "key" | "keystroke" | "keystrokes" => {
-            client.send_text_keys(text.to_string(), enter).await?;
-            println!("Sent keystroke text '{}' to {} (enter={})", text, ip_str, enter);
-        }
-        "ime" => {
-            client.send_text_ime(text.to_string()).await?;
-            println!("Sent IME text '{}' to {}", text, ip_str);
-        }
-        _ => {
-            if enter {
-                client.send_text_keys(text.to_string(), true).await?;
-                println!("Sent text '{}' + Enter to {}", text, ip_str);
-            } else {
-                client.send_text(text.to_string()).await?;
-                println!("Sent text '{}' to {}", text, ip_str);
+    if search {
+        client.search_on_tv(text.to_string()).await?;
+        println!("Triggered TV search and typed '{}' on {}", text, ip_str);
+    } else {
+        match mode.to_lowercase().as_str() {
+            "keys" | "key" | "keystroke" | "keystrokes" => {
+                client.send_text_keys(text.to_string(), enter).await?;
+                println!("Sent keystroke text '{}' to {} (enter={})", text, ip_str, enter);
+            }
+            "ime" => {
+                client.send_text_ime(text.to_string(), enter).await?;
+                println!("Sent IME text '{}' to {} (enter={})", text, ip_str, enter);
+            }
+            _ => {
+                if enter {
+                    client.send_text_with_enter(text.to_string()).await?;
+                    println!("Sent text '{}' + Enter to {}", text, ip_str);
+                } else {
+                    client.send_text(text.to_string()).await?;
+                    println!("Sent text '{}' to {}", text, ip_str);
+                }
             }
         }
     }
-    tokio::time::sleep(Duration::from_millis(300)).await;
+    tokio::time::sleep(Duration::from_millis(400)).await;
     let _ = client.disconnect().await;
     Ok(())
 }
@@ -1101,7 +1111,68 @@ async fn handle_apps_keys(key: crossterm::event::KeyEvent, state: &mut AppState)
 }
 
 async fn handle_text_input_keys(key: crossterm::event::KeyEvent, state: &mut AppState) -> Result<()> {
+    // 1. Control modifier shortcuts
+    if key.modifiers.contains(KeyModifiers::CONTROL) {
+        match key.code {
+            KeyCode::Char('s') => {
+                // TV Global Search overlay
+                let text = if !state.text_input_buffer.trim().is_empty() {
+                    state.text_input_buffer.trim().to_string()
+                } else if let Some(h) = state.text_input_history.get(state.selected_history_idx) {
+                    h.clone()
+                } else {
+                    String::new()
+                };
+                if !text.is_empty() {
+                    if let Some(client) = &state.client_handle {
+                        let _ = client.search_on_tv(text.clone()).await;
+                        state.log(
+                            LogLevel::Success,
+                            format!("Started TV Search for: \"{}\"", text),
+                        );
+                        state.add_search_history(&text);
+                        state.text_input_buffer.clear();
+                    } else {
+                        state.log(LogLevel::Warning, "Not connected to TV (connect first in Devices tab)");
+                    }
+                }
+                return Ok(());
+            }
+            KeyCode::Char('d') => {
+                // Delete selected history item
+                if let Some(removed) = state.delete_selected_history() {
+                    state.log(LogLevel::Warning, format!("Deleted history item: \"{}\"", removed));
+                    if let Some(h) = state.text_input_history.get(state.selected_history_idx) {
+                        state.text_input_buffer = h.clone();
+                    } else {
+                        state.text_input_buffer.clear();
+                    }
+                }
+                return Ok(());
+            }
+            KeyCode::Char('x') => {
+                // Clear all history
+                state.clear_all_history();
+                state.text_input_buffer.clear();
+                state.log(LogLevel::Warning, "Cleared all search history.");
+                return Ok(());
+            }
+            _ => {}
+        }
+    }
+
     match key.code {
+        KeyCode::Delete => {
+            // Delete selected history item
+            if let Some(removed) = state.delete_selected_history() {
+                state.log(LogLevel::Warning, format!("Deleted history item: \"{}\"", removed));
+                if let Some(h) = state.text_input_history.get(state.selected_history_idx) {
+                    state.text_input_buffer = h.clone();
+                } else {
+                    state.text_input_buffer.clear();
+                }
+            }
+        }
         KeyCode::Tab => {
             state.text_input_mode = state.text_input_mode.next();
             state.log(
@@ -1131,36 +1202,51 @@ async fn handle_text_input_keys(key: crossterm::event::KeyEvent, state: &mut App
         KeyCode::Backspace => {
             state.text_input_buffer.pop();
         }
-        KeyCode::Char(c) => {
-            state.text_input_buffer.push(c);
-        }
         KeyCode::Enter => {
-            let text = state.text_input_buffer.trim().to_string();
+            let press_enter = key.modifiers.contains(KeyModifiers::SHIFT);
+            let text = if !state.text_input_buffer.trim().is_empty() {
+                state.text_input_buffer.trim().to_string()
+            } else if let Some(h) = state.text_input_history.get(state.selected_history_idx) {
+                h.clone()
+            } else {
+                String::new()
+            };
+
             if !text.is_empty() {
                 if let Some(client) = &state.client_handle {
                     match state.text_input_mode {
                         TextInputMode::Smart => {
-                            let _ = client.send_text(text.clone()).await;
+                            if press_enter {
+                                let _ = client.send_text_with_enter(text.clone()).await;
+                            } else {
+                                let _ = client.send_text(text.clone()).await;
+                            }
                         }
                         TextInputMode::Keystroke => {
-                            let _ = client.send_text_keys(text.clone(), false).await;
+                            let _ = client.send_text_keys(text.clone(), press_enter).await;
                         }
                         TextInputMode::Ime => {
-                            let _ = client.send_text_ime(text.clone()).await;
+                            let _ = client.send_text_ime(text.clone(), press_enter).await;
                         }
                     }
                     state.log(
                         LogLevel::Success,
-                        format!("Sent text [{}] to TV: \"{}\"", state.text_input_mode.label(), text),
+                        format!(
+                            "Sent text [{}{}] to TV: \"{}\"",
+                            state.text_input_mode.label(),
+                            if press_enter { " + Enter" } else { "" },
+                            text
+                        ),
                     );
-                    if !state.text_input_history.contains(&text) {
-                        state.text_input_history.insert(0, text.clone());
-                    }
+                    state.add_search_history(&text);
                     state.text_input_buffer.clear();
                 } else {
                     state.log(LogLevel::Warning, "Not connected to TV (connect first in Devices tab)");
                 }
             }
+        }
+        KeyCode::Char(c) => {
+            state.text_input_buffer.push(c);
         }
         _ => {}
     }
@@ -1236,7 +1322,9 @@ async fn handle_macros_keys(key: crossterm::event::KeyEvent, state: &mut AppStat
                             } else if step.action.starts_with("keys:") {
                                 let _ = client.send_text_keys(step.action[5..].to_string(), false).await;
                             } else if step.action.starts_with("ime:") {
-                                let _ = client.send_text_ime(step.action[4..].to_string()).await;
+                                let _ = client.send_text_ime(step.action[4..].to_string(), false).await;
+                            } else if step.action.starts_with("search:") {
+                                let _ = client.search_on_tv(step.action[7..].to_string()).await;
                             }
                         }
                     });

@@ -47,6 +47,8 @@ pub struct AppConfig {
     pub devices: Vec<SavedDevice>,
     pub custom_apps: Vec<CustomApp>,
     pub macros: Vec<SavedMacro>,
+    #[serde(default = "default_search_history")]
+    pub search_history: Vec<String>,
 }
 
 impl Default for AppConfig {
@@ -56,8 +58,18 @@ impl Default for AppConfig {
             devices: Vec::new(),
             custom_apps: default_apps(),
             macros: default_macros(),
+            search_history: default_search_history(),
         }
     }
+}
+
+pub fn default_search_history() -> Vec<String> {
+    vec![
+        "4K HDR OLED Demo".into(),
+        "Synthwave chill mix".into(),
+        "Nature documentary".into(),
+        "Lo-fi hip hop radio".into(),
+    ]
 }
 
 pub fn default_apps() -> Vec<CustomApp> {
@@ -395,6 +407,34 @@ impl AppConfig {
             .collect::<Vec<_>>()
             .join(", ")
     }
+
+    pub fn add_search_history(&mut self, query: &str) {
+        let q = query.trim().to_string();
+        if q.is_empty() {
+            return;
+        }
+        self.search_history.retain(|h| h != &q);
+        self.search_history.insert(0, q);
+        if self.search_history.len() > 50 {
+            self.search_history.truncate(50);
+        }
+        let _ = self.save();
+    }
+
+    pub fn delete_search_history_item(&mut self, index: usize) -> Option<String> {
+        if index < self.search_history.len() {
+            let removed = self.search_history.remove(index);
+            let _ = self.save();
+            Some(removed)
+        } else {
+            None
+        }
+    }
+
+    pub fn clear_search_history(&mut self) {
+        self.search_history.clear();
+        let _ = self.save();
+    }
 }
 
 #[cfg(test)]
@@ -466,6 +506,31 @@ mod tests {
             cfg.get_last_tv(),
             Some(("Living Room TV".to_string(), "192.168.1.50".to_string()))
         );
+    }
+
+    #[test]
+    fn test_search_history_operations() {
+        let mut cfg = AppConfig {
+            search_history: vec!["Old query".into()],
+            ..Default::default()
+        };
+        cfg.add_search_history("New query");
+        assert_eq!(cfg.search_history[0], "New query");
+        assert_eq!(cfg.search_history.len(), 2);
+
+        // Deduplication & bring to front
+        cfg.add_search_history("Old query");
+        assert_eq!(cfg.search_history[0], "Old query");
+        assert_eq!(cfg.search_history.len(), 2);
+
+        // Delete item
+        let removed = cfg.delete_search_history_item(1);
+        assert_eq!(removed, Some("New query".into()));
+        assert_eq!(cfg.search_history.len(), 1);
+
+        // Clear all
+        cfg.clear_search_history();
+        assert!(cfg.search_history.is_empty());
     }
 }
 

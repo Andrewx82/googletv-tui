@@ -33,11 +33,11 @@ Built on the **Android TV Remote Protocol v2** using mutual TLS (mTLS), Protocol
 - **⌨ TV Virtual Keyboard, IME & Keystroke Injection (Tab 4)**:
   - Type directly on your computer keyboard to inject text into any active text field or search bar on the TV.
   - **Triple Input Modes** (toggle anytime with `Tab`):
-    - **Smart (Auto)**: Automatically uses IME batch editing when Android TV reports an active input field; falls back to hardware keystroke injection.
-    - **Keystrokes**: Injects character-by-character key events (`RemoteKeyInject`). Works in YouTube, Netflix, Prime Video, Plex, and canvas/web keyboards.
-    - **IME Batch**: Direct Android IME batch edit with active field counter synchronization (`RemoteImeShowRequest` & `RemoteImeBatchEdit`).
-  - Real-time TV input field detection with live status badge and field ID tracking.
-  - Search history with instant re-send (`↑`/`↓` and `Enter`).
+    - **Smart (IME Direct)**: Commits text directly into Android TV text fields via `RemoteImeBatchEdit` with full UTF-8 support.
+    - **Keystrokes**: Injects character-by-character hardware key events (`RemoteKeyInject`).
+    - **IME Batch**: Direct Android IME batch edit with active field counter synchronization.
+  - **TV Global Search Overlay (`Ctrl+S`)**: Pops up Google TV Assistant / Search, types query, and submits automatically.
+  - **Full Search History Management**: Re-send past queries (`↑`/`↓` and `Enter`), delete individual items (`Del` / `Ctrl+D`), or clear all history (`Ctrl+X`). Automatically persisted to config.
 - **⚡ Macro Sequences & Custom Automation (Tab 5)**:
   - Automated multi-step actions (e.g. *Movie Night*: Wake TV → Delay 2s → Launch Netflix; *Bedtime Sleep*: Go Home → Wait 1s → Sleep).
   - **Full Macro Editor**: Add custom macros (`a`), edit existing macros (`e`), delete macros (`d` / `Delete`).
@@ -317,6 +317,19 @@ rm -rf ~/.config/googletv-tui
 | `Space` | Toggle app on/off Remote Control Quick Apps Pad |
 | `u` | Launch direct URL or Android Intent URI dialog |
 | `Esc` | Clear search filter |
+
+### Text Input & Search Tab (Tab 4)
+
+| Key | Action |
+|---|---|
+| `Enter` | Send text or selected history query to TV input field |
+| `Shift+Enter` | Send text and press Enter on TV (submit search query) |
+| `Ctrl+S` | Trigger TV Search overlay + type query + submit |
+| `Tab` | Cycle transmission mode (Smart IME / Keystrokes / Force IME) |
+| `↑` / `↓` | Select from search history |
+| `Del` / `Ctrl+D` | Delete selected history item |
+| `Ctrl+X` | Clear entire search history |
+| `Esc` | Clear text input buffer |
 
 ### Automation Macros Tab (Tab 5)
 

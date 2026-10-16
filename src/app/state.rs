@@ -350,6 +350,7 @@ pub struct AppState {
 
 impl AppState {
     pub fn new(config: AppConfig) -> Self {
+        let text_input_history = config.search_history.clone();
         let mut state = Self {
             config,
             active_tab: ActiveTab::Remote,
@@ -378,12 +379,7 @@ impl AppState {
             selected_app_idx: 0,
 
             text_input_buffer: String::new(),
-            text_input_history: vec![
-                "4K HDR OLED Demo".into(),
-                "Synthwave chill mix".into(),
-                "Nature documentary".into(),
-                "Lo-fi hip hop radio".into(),
-            ],
+            text_input_history,
             selected_history_idx: 0,
             text_input_mode: TextInputMode::Smart,
             ime_active: false,
@@ -399,6 +395,30 @@ impl AppState {
 
         state.log(LogLevel::Info, "Google TV Remote TUI initialized.");
         state
+    }
+
+    pub fn add_search_history(&mut self, query: &str) {
+        self.config.add_search_history(query);
+        self.text_input_history = self.config.search_history.clone();
+        self.selected_history_idx = 0;
+    }
+
+    pub fn delete_selected_history(&mut self) -> Option<String> {
+        if self.text_input_history.is_empty() {
+            return None;
+        }
+        let removed = self.config.delete_search_history_item(self.selected_history_idx);
+        self.text_input_history = self.config.search_history.clone();
+        if self.selected_history_idx >= self.text_input_history.len() && self.selected_history_idx > 0 {
+            self.selected_history_idx -= 1;
+        }
+        removed
+    }
+
+    pub fn clear_all_history(&mut self) {
+        self.config.clear_search_history();
+        self.text_input_history.clear();
+        self.selected_history_idx = 0;
     }
 
     pub fn log(&mut self, level: LogLevel, msg: impl Into<String>) {
