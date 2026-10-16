@@ -233,19 +233,18 @@ impl TvConnection {
                                     text_field_status: Some(ime_obj),
                                 };
                                 let batch = RemoteImeBatchEdit {
-                                    ime_counter,
-                                    field_counter,
+                                    ime_counter: 0,
+                                    field_counter: 0,
                                     edit_info: vec![edit],
                                 };
                                 let mut msg = RemoteMessage::default();
                                 msg.remote_ime_batch_edit = Some(batch);
                                 let _ = event_tx
                                     .send(TvEvent::ProtocolLog(format!(
-                                        "TX Smart IME text: '{}' (ime_counter={}, field_counter={}, enter={})",
-                                        text, ime_counter, field_counter, press_enter
+                                        "TX Smart IME text: '{}' (ime=0, field=0, enter={})",
+                                        text, press_enter
                                     )))
                                     .await;
-                                ime_counter += 1;
                                 if let Err(e) = write_delimited_message(&mut stream, &msg).await {
                                     let _ = event_tx.send(TvEvent::Disconnected(format!("Write error: {}", e))).await;
                                     break;
@@ -275,16 +274,16 @@ impl TvConnection {
                                     text_field_status: Some(ime_obj),
                                 };
                                 let batch = RemoteImeBatchEdit {
-                                    ime_counter,
-                                    field_counter,
+                                    ime_counter: 0,
+                                    field_counter: 0,
                                     edit_info: vec![edit],
                                 };
                                 let mut msg = RemoteMessage::default();
                                 msg.remote_ime_batch_edit = Some(batch);
                                 let _ = event_tx
                                     .send(TvEvent::ProtocolLog(format!(
-                                        "TX Force IME text: '{}' (ime_counter={}, field_counter={}, enter={})",
-                                        text, ime_counter, field_counter, press_enter
+                                        "TX Force IME text: '{}' (ime=0, field=0, enter={})",
+                                        text, press_enter
                                     )))
                                     .await;
                                 ime_counter += 1;
@@ -372,13 +371,12 @@ impl TvConnection {
                                     text_field_status: Some(ime_obj),
                                 };
                                 let batch = RemoteImeBatchEdit {
-                                    ime_counter,
-                                    field_counter,
+                                    ime_counter: 0,
+                                    field_counter: 0,
                                     edit_info: vec![edit],
                                 };
                                 let mut text_msg = RemoteMessage::default();
                                 text_msg.remote_ime_batch_edit = Some(batch);
-                                ime_counter += 1;
                                 if let Err(e) = write_delimited_message(&mut stream, &text_msg).await {
                                     let _ = event_tx.send(TvEvent::Disconnected(format!("Write error: {}", e))).await;
                                     break;

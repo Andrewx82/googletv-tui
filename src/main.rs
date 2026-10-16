@@ -754,36 +754,40 @@ async fn handle_key_event(
     }
 
     // 2. Global Hotkeys
+    let is_text_focused = (state.active_tab == ActiveTab::TextInput && state.text_input_focused)
+        || (state.active_tab == ActiveTab::Apps && !state.apps_search.is_empty());
+
     match key.code {
         KeyCode::Char('q') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             state.should_quit = true;
             return Ok(());
         }
-        KeyCode::Char('?') => {
+        KeyCode::Char('?') if !is_text_focused => {
             state.modal = ActiveModal::Help;
             return Ok(());
         }
-        KeyCode::Char('1') => {
+        KeyCode::Char('1') if !is_text_focused => {
             state.active_tab = ActiveTab::Remote;
             return Ok(());
         }
-        KeyCode::Char('2') => {
+        KeyCode::Char('2') if !is_text_focused => {
             state.active_tab = ActiveTab::Devices;
             return Ok(());
         }
-        KeyCode::Char('3') => {
+        KeyCode::Char('3') if !is_text_focused => {
             state.active_tab = ActiveTab::Apps;
             return Ok(());
         }
-        KeyCode::Char('4') => {
+        KeyCode::Char('4') if !is_text_focused => {
             state.active_tab = ActiveTab::TextInput;
+            state.text_input_focused = true;
             return Ok(());
         }
-        KeyCode::Char('5') => {
+        KeyCode::Char('5') if !is_text_focused => {
             state.active_tab = ActiveTab::Macros;
             return Ok(());
         }
-        KeyCode::Char('6') => {
+        KeyCode::Char('6') if !is_text_focused => {
             state.active_tab = ActiveTab::Logs;
             return Ok(());
         }
@@ -1111,7 +1115,41 @@ async fn handle_apps_keys(key: crossterm::event::KeyEvent, state: &mut AppState)
 }
 
 async fn handle_text_input_keys(key: crossterm::event::KeyEvent, state: &mut AppState) -> Result<()> {
-    // 1. Control modifier shortcuts
+    // When text input field has dropped focus, route to TV remote control keybindings!
+    if !state.text_input_focused {
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => send_remote_key(state, RemoteKeyCode::KeycodeDpadUp).await,
+            KeyCode::Down | KeyCode::Char('j') => send_remote_key(state, RemoteKeyCode::KeycodeDpadDown).await,
+            KeyCode::Left | KeyCode::Char('h') => send_remote_key(state, RemoteKeyCode::KeycodeDpadLeft).await,
+            KeyCode::Right | KeyCode::Char('l') => send_remote_key(state, RemoteKeyCode::KeycodeDpadRight).await,
+            KeyCode::Enter => send_remote_key(state, RemoteKeyCode::KeycodeDpadCenter).await,
+            KeyCode::Esc | KeyCode::Char('b') => send_remote_key(state, RemoteKeyCode::KeycodeBack).await,
+            KeyCode::Char('H') => send_remote_key(state, RemoteKeyCode::KeycodeHome).await,
+            KeyCode::Char('p') | KeyCode::Char('P') => send_remote_key(state, RemoteKeyCode::KeycodePower).await,
+            KeyCode::Char('+') | KeyCode::Char('=') => send_remote_key(state, RemoteKeyCode::KeycodeVolumeUp).await,
+            KeyCode::Char('-') | KeyCode::Char('_') => send_remote_key(state, RemoteKeyCode::KeycodeVolumeDown).await,
+            KeyCode::Char('m') => send_remote_key(state, RemoteKeyCode::KeycodeVolumeMute).await,
+            KeyCode::Char(' ') => send_remote_key(state, RemoteKeyCode::KeycodeMediaPlayPause).await,
+            KeyCode::Char('i') | KeyCode::Char('/') | KeyCode::Tab => {
+                state.text_input_focused = true;
+                state.log(LogLevel::Info, "Focused text input field (type query)");
+            }
+            KeyCode::Delete => {
+                if let Some(removed) = state.delete_selected_history() {
+                    state.log(LogLevel::Warning, format!("Deleted history item: \"{}\"", removed));
+                    if let Some(h) = state.text_input_history.get(state.selected_history_idx) {
+                        state.text_input_buffer = h.clone();
+                    } else {
+                        state.text_input_buffer.clear();
+                    }
+                }
+            }
+            _ => {}
+        }
+        return Ok(());
+    }
+
+    // 1. Control modifier shortcuts (when focused)
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         match key.code {
             KeyCode::Char('s') => {
@@ -1132,6 +1170,8 @@ async fn handle_text_input_keys(key: crossterm::event::KeyEvent, state: &mut App
                         );
                         state.add_search_history(&text);
                         state.text_input_buffer.clear();
+                        state.text_input_focused = false;
+                        state.log(LogLevel::Info, "TV search sent — text input dropped focus; D-Pad / OK / Back active.");
                     } else {
                         state.log(LogLevel::Warning, "Not connected to TV (connect first in Devices tab)");
                     }
@@ -1197,7 +1237,12 @@ async fn handle_text_input_keys(key: crossterm::event::KeyEvent, state: &mut App
             }
         }
         KeyCode::Esc => {
-            state.text_input_buffer.clear();
+            if state.text_input_buffer.is_empty() {
+                state.text_input_focused = false;
+                state.log(LogLevel::Info, "Dropped text input focus — TV remote keybindings active.");
+            } else {
+                state.text_input_buffer.clear();
+            }
         }
         KeyCode::Backspace => {
             state.text_input_buffer.pop();
@@ -1240,6 +1285,8 @@ async fn handle_text_input_keys(key: crossterm::event::KeyEvent, state: &mut App
                     );
                     state.add_search_history(&text);
                     state.text_input_buffer.clear();
+                    state.text_input_focused = false;
+                    state.log(LogLevel::Info, "Text sent — dropped focus; TV remote keybindings (D-Pad, OK, Back) active.");
                 } else {
                     state.log(LogLevel::Warning, "Not connected to TV (connect first in Devices tab)");
                 }

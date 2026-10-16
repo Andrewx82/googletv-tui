@@ -18,11 +18,17 @@ pub fn render(frame: &mut Frame, state: &AppState, area: Rect) {
         .split(area);
 
     // 1. Text Entry Box with Mode & Status
+    let (border_color, focus_tag) = if state.text_input_focused {
+        (Theme::GOOGLE_BLUE, " [FOCUSED - Typing Mode] ")
+    } else {
+        (Theme::BORDER, " [UNFOCUSED - TV Remote Active | Press 'i' or Tab to type] ")
+    };
+
     let entry_block = Block::default()
-        .title(" ⌨ TV Text Input & Search Injection ")
+        .title(format!(" ⌨ TV Text Input & Search Injection{} ", focus_tag))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Theme::GOOGLE_BLUE))
+        .border_style(Style::default().fg(border_color))
         .style(Style::default().bg(Theme::BG_DARK));
 
     let mode_style = match state.text_input_mode {
@@ -59,25 +65,33 @@ pub fn render(frame: &mut Frame, state: &AppState, area: Rect) {
         Span::styled("  [Tab to cycle: Smart ➔ Keystrokes ➔ IME]", Style::default().fg(Theme::TEXT_MUTED)),
     ]);
 
+    let prompt_text = if state.text_input_buffer.is_empty() {
+        if state.text_input_focused {
+            "Type query or text here..."
+        } else {
+            "Press 'i' or Tab to focus and type..."
+        }
+    } else {
+        &state.text_input_buffer
+    };
+
+    let prompt_style = if state.text_input_buffer.is_empty() {
+        Style::default().fg(Theme::TEXT_MUTED)
+    } else {
+        Style::default().fg(Theme::TEXT_PRIMARY).add_modifier(Modifier::BOLD)
+    };
+
     let entry_lines = vec![
         status_line,
         mode_line,
         Line::from(vec![]),
         Line::from(vec![
             Span::styled(" > [ ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
+            Span::styled(prompt_text, prompt_style),
             Span::styled(
-                if state.text_input_buffer.is_empty() {
-                    "Type query or text here..."
-                } else {
-                    &state.text_input_buffer
-                },
-                if state.text_input_buffer.is_empty() {
-                    Style::default().fg(Theme::TEXT_MUTED)
-                } else {
-                    Style::default().fg(Theme::TEXT_PRIMARY).add_modifier(Modifier::BOLD)
-                },
+                if state.text_input_focused { " █ ]" } else { " ]" },
+                Style::default().fg(Theme::ACCENT_CYAN),
             ),
-            Span::styled(" █ ]", Style::default().fg(Theme::ACCENT_CYAN)),
         ]),
         Line::from(vec![
             Span::styled(
@@ -141,27 +155,49 @@ pub fn render(frame: &mut Frame, state: &AppState, area: Rect) {
         .border_style(Style::default().fg(Theme::BORDER))
         .style(Style::default().bg(Theme::SURFACE));
 
-    let hints_line1 = Line::from(vec![
-        Span::styled(" [Enter] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
-        Span::raw("Send text   "),
-        Span::styled("[Shift+Enter] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
-        Span::raw("Send & Submit   "),
-        Span::styled("[Ctrl+S] ", Style::default().fg(Theme::GOOGLE_GREEN).add_modifier(Modifier::BOLD)),
-        Span::raw("TV Global Search   "),
-        Span::styled("[Tab] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
-        Span::raw("Cycle Mode"),
-    ]);
-
-    let hints_line2 = Line::from(vec![
-        Span::styled(" [↑/↓] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
-        Span::raw("Select History   "),
-        Span::styled("[Del / Ctrl+D] ", Style::default().fg(Theme::GOOGLE_RED).add_modifier(Modifier::BOLD)),
-        Span::raw("Delete Item   "),
-        Span::styled("[Ctrl+X] ", Style::default().fg(Theme::GOOGLE_RED).add_modifier(Modifier::BOLD)),
-        Span::raw("Clear All History   "),
-        Span::styled("[Esc] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
-        Span::raw("Clear Buffer"),
-    ]);
+    let (hints_line1, hints_line2) = if state.text_input_focused {
+        (
+            Line::from(vec![
+                Span::styled(" [Enter] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
+                Span::raw("Send & Drop Focus   "),
+                Span::styled("[Shift+Enter] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
+                Span::raw("Send & Submit   "),
+                Span::styled("[Ctrl+S] ", Style::default().fg(Theme::GOOGLE_GREEN).add_modifier(Modifier::BOLD)),
+                Span::raw("TV Search   "),
+                Span::styled("[Esc] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
+                Span::raw("Drop Focus"),
+            ]),
+            Line::from(vec![
+                Span::styled(" [↑/↓] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
+                Span::raw("Select History   "),
+                Span::styled("[Del / Ctrl+D] ", Style::default().fg(Theme::GOOGLE_RED).add_modifier(Modifier::BOLD)),
+                Span::raw("Delete Item   "),
+                Span::styled("[Ctrl+X] ", Style::default().fg(Theme::GOOGLE_RED).add_modifier(Modifier::BOLD)),
+                Span::raw("Clear All History   "),
+                Span::styled("[Tab] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
+                Span::raw("Cycle Mode"),
+            ]),
+        )
+    } else {
+        (
+            Line::from(vec![
+                Span::styled(" [D-Pad / ↑↓←→ / hjkl] ", Style::default().fg(Theme::GOOGLE_GREEN).add_modifier(Modifier::BOLD)),
+                Span::raw("Navigate TV Screen   "),
+                Span::styled("[Enter] ", Style::default().fg(Theme::GOOGLE_GREEN).add_modifier(Modifier::BOLD)),
+                Span::raw("OK / Select on TV   "),
+                Span::styled("[Esc / b] ", Style::default().fg(Theme::GOOGLE_GREEN).add_modifier(Modifier::BOLD)),
+                Span::raw("Back on TV"),
+            ]),
+            Line::from(vec![
+                Span::styled(" [i / Tab] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
+                Span::raw("Focus Input Field to Type   "),
+                Span::styled("[1-6] ", Style::default().fg(Theme::ACCENT_CYAN).add_modifier(Modifier::BOLD)),
+                Span::raw("Switch Tabs   "),
+                Span::styled("[Del] ", Style::default().fg(Theme::GOOGLE_RED).add_modifier(Modifier::BOLD)),
+                Span::raw("Delete History Item"),
+            ]),
+        )
+    };
 
     frame.render_widget(Paragraph::new(vec![hints_line1, hints_line2]).block(footer_block), chunks[2]);
 }
